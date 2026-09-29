@@ -1,0 +1,77 @@
+name: VARUNI CI
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  backend-test:
+    name: Backend Lint & Pytest
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install GDAL and system geospatial dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgdal-dev gdal-bin libgeos-dev libspatialindex-dev
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r app/api/requirements.txt
+          pip install pytest pytest-asyncio flake8
+
+      - name: Lint Backend Code
+        run: |
+          # Stop build if syntax errors or undefined names exist
+          flake8 app/api --count --select=E9,F63,F7,F82 --show-source --statistics
+          # Exit-zero treat all errors as warnings
+          flake8 app/api --count --exit-zero --max-complexity=15 --max-line-length=127 --statistics
+
+      - name: Run Backend Tests (Pytest)
+        env:
+          CLIP_OFFLINE_MODE: "1"
+          DATABASE_URL: "postgresql://postgres:postgres@localhost:5432/varuni_db"
+          JWT_SECRET_KEY: "test_ci_jwt_secret_key_varuni_secure_token"
+        run: |
+          PYTHONPATH=app/api pytest app/api/tests/ -v
+
+  frontend-test:
+    name: Frontend Lint, Test & Build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+          cache-dependency-path: app/web/package.json
+
+      - name: Install Dependencies
+        working-directory: app/web
+        run: npm ci || npm install
+
+      - name: Run Frontend Tests
+        working-directory: app/web
+        run: npm test
+
+      - name: Build Next.js Application
+        working-directory: app/web
+        env:
+          NEXT_PUBLIC_API_URL: "http://localhost:8000"
+        run: npm run build

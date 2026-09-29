@@ -1,6 +1,5 @@
 # Watershed Geospatial Intelligence Platform - Master Blueprint
 
-Problem Statement: 26015
 Title: Application of Geospatial Techniques for Visualization and Analysis to Interpret Geo-Coded Images to Enhance Watershed Development Outcomes
 Organization: Ministry of Rural Development
 

@@ -1,0 +1,24 @@
+code,name
+l01,Built-up Land
+l02,Kharif Crop
+l03,Rabi Crop
+l04,Zaid Crop
+l05,Double / Triple Crop
+l06,Current Fallow
+l07,Plantation / Orchards
+l08,Deciduous Forest
+l09,Evergreen Forest
+l10,Scrub Forest
+l11,Forest Plantation
+l12,Grasslands / Grazing Land
+l13,Wastelands / Barren
+l14,Gullied / Ravenous Land
+l15,Scrubland
+l16,Water Bodies / Reservoirs / Lakes / Ponds
+l17,River / Stream / Canals
+l18,Wetlands / Mangroves
+l19,Snow / Glacier
+l20,Shifting Cultivation
+l21,Mining / Industrial Wasteland
+l22,Coastal Wetland
+l23,Rann / Salt Pan

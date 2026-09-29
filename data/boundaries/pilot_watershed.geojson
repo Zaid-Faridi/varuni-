@@ -1,0 +1,44 @@
+{
+  "type": "FeatureCollection",
+  "name": "Sukhi Nadi Pilot Watershed",
+  "crs": {
+    "type": "name",
+    "properties": {
+      "name": "urn:ogc:def:crs:OGC:1.3:CRS84"
+    }
+  },
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "name": "Sukhi Nadi Pilot Catchment",
+        "state": "Maharashtra",
+        "district": "Pune",
+        "block": "Khed",
+        "source": "India-WRIS / Bhuvan Micro-watershed Atlas (5D2B4)",
+        "version": "2024.1",
+        "elevation_min": 580.0,
+        "elevation_max": 940.0,
+        "slope_avg": 8.4
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [73.8120, 18.7850],
+            [73.8450, 18.8100],
+            [73.8900, 18.8250],
+            [73.9300, 18.8150],
+            [73.9550, 18.7800],
+            [73.9450, 18.7350],
+            [73.9100, 18.7050],
+            [73.8650, 18.6950],
+            [73.8250, 18.7200],
+            [73.8050, 18.7550],
+            [73.8120, 18.7850]
+          ]
+        ]
+      }
+    }
+  ]
+}
