@@ -122,7 +122,7 @@ def compute_satellite_context(
     )
 
     if not assets:
-        return ImageSatelliteContext(time_series_at_pixel=[], message="No clear satellite rasters ingested for this watershed.")
+        return ImageSatelliteContext(time_series_at_pixel=[], message="No valid observation available.")
 
     # Sort assets by acquisition date
     asset_dates = []
@@ -140,9 +140,13 @@ def compute_satellite_context(
     min_after_gap = float("inf")
 
     for asset, dt, scene in asset_dates:
-        px_val, win_mean = sample_raster_at_point(asset.uri, latitude, longitude)
+        # Pass (longitude, latitude) to sample_raster_at_point
+        px_val, win_mean = sample_raster_at_point(asset.uri, longitude, latitude)
         if px_val is not None:
             scene_code = scene.scene_id if scene else asset.name
+            sensor_name = scene.sensor if (scene and scene.sensor) else "OLI-TIRS"
+            res_m = float(scene.resolution_m) if (scene and scene.resolution_m) else 30.0
+
             time_series.append(TimeSeriesPointResponse(
                 date=dt.strftime("%Y-%m-%d"),
                 value=round(px_val, 4),
@@ -159,6 +163,8 @@ def compute_satellite_context(
                         scene_id=scene_code,
                         date=dt.strftime("%Y-%m-%d"),
                         day_gap=gap,
+                        sensor=sensor_name,
+                        resolution_m=res_m,
                         ndvi=round(px_val, 4),
                         window_3x3_mean_ndvi=round(win_mean, 4) if win_mean is not None else None,
                         is_far_gap=gap > 30
@@ -171,16 +177,19 @@ def compute_satellite_context(
                         scene_id=scene_code,
                         date=dt.strftime("%Y-%m-%d"),
                         day_gap=gap,
+                        sensor=sensor_name,
+                        resolution_m=res_m,
                         ndvi=round(px_val, 4),
                         window_3x3_mean_ndvi=round(win_mean, 4) if win_mean is not None else None,
                         is_far_gap=gap > 30
                     )
 
+    msg = None if (before_scene or after_scene or time_series) else "No valid observation available."
     return ImageSatelliteContext(
         nearest_before=before_scene,
         nearest_after=after_scene,
         time_series_at_pixel=time_series,
-        message=None
+        message=msg
     )
 
 
@@ -258,6 +267,7 @@ async def upload_image(
     watershed_name = None
     geom_wkt = None
     is_manual = False
+    gps_source = "EXIF GPS" if (lat is not None and lon is not None) else "No EXIF GPS"
 
     if lat is not None and lon is not None:
         if INDIA_BBOX["min_lat"] <= lat <= INDIA_BBOX["max_lat"] and INDIA_BBOX["min_lon"] <= lon <= INDIA_BBOX["max_lon"]:
@@ -277,12 +287,14 @@ async def upload_image(
     db_image = ImageObservation(
         id=img_id,
         object_uri=f"uploads/{filename}",
+        original_filename=file.filename,
         thumbnail_uri=f"thumbnails/{img_id}_thumb.jpg",
         captured_at=captured_at or datetime.datetime.utcnow(),
         latitude=lat,
         longitude=lon,
         geom=geom_wkt,
         watershed_id=matched_watershed_id,
+        gps_source=gps_source,
         quality_status=qc_result["quality_status"],
         quality_score=qc_result["quality_score"],
         quality_reasons=qc_result["quality_reasons"],
@@ -312,10 +324,12 @@ async def upload_image(
     return ImageResponse(
         id=db_image.id,
         object_uri=db_image.object_uri,
+        original_filename=db_image.original_filename,
         thumbnail_uri=db_image.thumbnail_uri,
         captured_at=db_image.captured_at,
         latitude=db_image.latitude,
         longitude=db_image.longitude,
+        gps_source=db_image.gps_source,
         watershed_id=db_image.watershed_id,
         watershed_name=watershed_name,
         quality_status=db_image.quality_status,
@@ -364,10 +378,12 @@ def list_images(
         results.append(ImageResponse(
             id=img.id,
             object_uri=img.object_uri,
+            original_filename=img.original_filename,
             thumbnail_uri=img.thumbnail_uri,
             captured_at=img.captured_at,
             latitude=img.latitude,
             longitude=img.longitude,
+            gps_source=img.gps_source,
             watershed_id=img.watershed_id,
             watershed_name=ws_name,
             quality_status=img.quality_status,
@@ -425,10 +441,12 @@ def list_flagged_images(
         results.append(ImageResponse(
             id=img.id,
             object_uri=img.object_uri,
+            original_filename=img.original_filename,
             thumbnail_uri=img.thumbnail_uri,
             captured_at=img.captured_at,
             latitude=img.latitude,
             longitude=img.longitude,
+            gps_source=img.gps_source,
             watershed_id=img.watershed_id,
             watershed_name=ws_name,
             quality_status=img.quality_status,
@@ -496,10 +514,12 @@ def review_image_label(
     return ImageResponse(
         id=img.id,
         object_uri=img.object_uri,
+        original_filename=img.original_filename,
         thumbnail_uri=img.thumbnail_uri,
         captured_at=img.captured_at,
         latitude=img.latitude,
         longitude=img.longitude,
+        gps_source=img.gps_source,
         watershed_id=img.watershed_id,
         watershed_name=ws_name,
         quality_status=img.quality_status,
@@ -541,10 +561,12 @@ def get_image_detail(id: uuid.UUID, db: Session = Depends(get_db)):
     return ImageResponse(
         id=img.id,
         object_uri=img.object_uri,
+        original_filename=img.original_filename,
         thumbnail_uri=img.thumbnail_uri,
         captured_at=img.captured_at,
         latitude=img.latitude,
         longitude=img.longitude,
+        gps_source=img.gps_source,
         watershed_id=img.watershed_id,
         watershed_name=ws_name,
         quality_status=img.quality_status,
@@ -588,6 +610,7 @@ def set_manual_location(
     img.latitude = latitude
     img.longitude = longitude
     img.is_manual_location = True
+    img.gps_source = "Manual Map Coordinate"
     img.geom = f"SRID=4326;POINT({longitude} {latitude})"
 
     # Find matching watershed
@@ -610,10 +633,12 @@ def set_manual_location(
     return ImageResponse(
         id=img.id,
         object_uri=img.object_uri,
+        original_filename=img.original_filename,
         thumbnail_uri=img.thumbnail_uri,
         captured_at=img.captured_at,
         latitude=img.latitude,
         longitude=img.longitude,
+        gps_source=img.gps_source,
         watershed_id=img.watershed_id,
         watershed_name=ws_name,
         quality_status=img.quality_status,

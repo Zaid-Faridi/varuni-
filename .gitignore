@@ -48,8 +48,7 @@ yarn-error.log*
 .env*
 !.env.example
 
-# Misc
-*.pem
-*.tsbuildinfo
-next-env.d.ts
-.vercel
+# Runtime data
+data/uploads/
+data/thumbnails/
+

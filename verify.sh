@@ -175,7 +175,7 @@ p3_1() { hr "P3.1 Auth"
   echo "frontend protected route (expect redirect to /login):"
   curl -s -o /dev/null -w "  HTTP %{http_code} -> %{redirect_url}\n" "$WEB/dashboard"
   echo "default credentials in source (expect nothing):"
-  grep -rn -i -E "password\s*[:=]\s*[\"'][^\"']+[\"']|admin123|demo@" app/ infra/ --include=*.ts --include=*.tsx --include=*.py --include=*.yml || echo "  none found"
+  grep -rn -i -E "password\s*[:=]\s*[\"'][^\"']+[\"']|admin[1]23|demo@" app/ infra/ --include=*.ts --include=*.tsx --include=*.py --include=*.yml || echo "  none found"
   echo "login rate limit (expect 429 after several tries):"
   for i in $(seq 1 12); do curl -s -o /dev/null -w "%{http_code} " -H "Content-Type: application/json" -X POST "$API/auth/login" -d '{"username_or_email":"baduser","password":"badpassword"}'; done; echo
   sql "SELECT event_type, username, created_at FROM audit_events ORDER BY id DESC LIMIT 5;" 2>&1 | head -8

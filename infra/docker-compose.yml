@@ -1,17 +1,15 @@
-version: '3.8'
-
 services:
   db:
-    image: postgis/postgis:15-3.3
+    image: postgis/postgis:16-3.4
     container_name: watershed-postgis
     environment:
-      POSTGRES_USER: watershed_user
-      POSTGRES_PASSWORD: watershed_password
-      POSTGRES_DB: watershed_db
+      POSTGRES_USER: ${POSTGRES_USER:-watershed_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-watershed_db}
     ports:
-      - "5432:5432"
+      - "${DB_PORT:-5432}:5432"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U watershed_user -d watershed_db"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-watershed_user} -d ${POSTGRES_DB:-watershed_db}"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -23,11 +21,18 @@ services:
     build: ../app/api
     container_name: watershed-api
     ports:
-      - "8000:8000"
+      - "${PORT:-8000}:8000"
     environment:
-      - DATABASE_URL=postgresql://watershed_user:watershed_password@db:5432/watershed_db
-      - CORS_ORIGINS=http://localhost:3000,http://localhost:3033,http://127.0.0.1:3000,http://127.0.0.1:3033
-      - PORT=8000
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-watershed_user}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-watershed_db}
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY}
+      - ADMIN_EMAIL=${ADMIN_EMAIL:-admin@watershed.gov.in}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD}
+      - DEMO_MODE=${DEMO_MODE:-0}
+      - DEMO_ANALYST_PASSWORD=${DEMO_ANALYST_PASSWORD:-}
+      - DEMO_OFFICER_PASSWORD=${DEMO_OFFICER_PASSWORD:-}
+      - DEMO_REVIEWER_PASSWORD=${DEMO_REVIEWER_PASSWORD:-}
+      - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost:3000,http://localhost:3033,http://127.0.0.1:3000,http://127.0.0.1:3033}
+      - PORT=${PORT:-8000}
     depends_on:
       db:
         condition: service_healthy
@@ -39,9 +44,9 @@ services:
     build: ../app/web
     container_name: watershed-web
     ports:
-      - "3000:3000"
+      - "${WEB_PORT:-3000}:3000"
     environment:
-      - NEXT_PUBLIC_API_URL=http://localhost:8000
+      - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-http://localhost:8000}
     depends_on:
       - api
     restart: unless-stopped

@@ -76,6 +76,8 @@ class SatelliteContextScene(BaseModel):
     scene_id: str
     date: str
     day_gap: int
+    sensor: Optional[str] = "OLI-TIRS"
+    resolution_m: Optional[float] = 30.0
     ndvi: Optional[float] = None
     ndwi: Optional[float] = None
     window_3x3_mean_ndvi: Optional[float] = None
@@ -90,9 +92,11 @@ class ImageSatelliteContext(BaseModel):
 
 class ImageBase(BaseModel):
     object_uri: str
+    original_filename: Optional[str] = None
     captured_at: Optional[datetime] = None
     latitude: Optional[float] = None
     longitude: Optional[float] = None
+    gps_source: Optional[str] = None
     intervention_type: Optional[str] = None
     camera_model: Optional[str] = None
     altitude: Optional[float] = None
@@ -148,6 +152,15 @@ class InterventionBase(BaseModel):
     description: Optional[str] = None
     cost_estimate: Optional[float] = None
     beneficiaries: Optional[int] = None
+    image_id: Optional[uuid.UUID] = None
+    photo_path: Optional[str] = None
+    photo_filename: Optional[str] = None
+    exif_latitude: Optional[float] = None
+    exif_longitude: Optional[float] = None
+    exif_timestamp: Optional[datetime] = None
+    gps_source: Optional[str] = None
+    idempotency_key: Optional[str] = None
+    review_status: str = "OBSERVED"
 
 class InterventionCreate(InterventionBase):
     pass
@@ -157,18 +170,42 @@ class InterventionReview(BaseModel):
     reviewer_id: str
     notes: Optional[str] = None
 
+class InterventionReviewRequest(BaseModel):
+    decision: str  # confirm, needs_visit, dismiss
+    notes: Optional[str] = None
+    expected_status: str
+
+class ReviewEventResponse(BaseModel):
+    id: uuid.UUID
+    intervention_id: uuid.UUID
+    from_status: str
+    to_status: str
+    decision: str
+    notes: Optional[str] = None
+    reviewer_id: str
+    reviewer_name: Optional[str] = None
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
 class InterventionResponse(InterventionBase):
     id: uuid.UUID
     watershed_name: Optional[str] = None
+    review_status: str = "OBSERVED"
+    current_reviewer_id: Optional[str] = None
+    current_notes: Optional[str] = None
     reviewer_decision: Optional[str] = None
     reviewer_id: Optional[str] = None
     reviewed_at: Optional[datetime] = None
-    image_id: Optional[uuid.UUID] = None
+    image_info: Optional[ImageResponse] = None
     
     # Terrain context
     nearest_stream_distance_m: Optional[float] = None
     upstream_catchment_area_sqkm: Optional[float] = None
     local_slope_deg: Optional[float] = None
+
+    # Satellite 30m NDVI & Spectral context
+    satellite_context: Optional[ImageSatelliteContext] = None
 
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
@@ -327,6 +364,10 @@ class DashboardStatsResponse(BaseModel):
     avg_ndwi: Optional[float] = None
     total_water_area_sqkm: Optional[float] = None
     quality_alerts: int
+    verified_interventions: int = 0
+    needs_visit_interventions: int = 0
+    dismissed_interventions: int = 0
+    observed_interventions: int = 0
 
 DashboardStats = DashboardStatsResponse
 WatershedGeoJSON = Dict[str, Any]

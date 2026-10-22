@@ -22,6 +22,14 @@ else
     PYTHON_EXEC="python3"
 fi
 
+# Ensure Demonstration Mode is active
+export DEMO_MODE=1
+
+# Generate a temporary JWT secret key if none is set or if shorter than 32 characters
+if [ -z "$JWT_SECRET_KEY" ] || [ ${#JWT_SECRET_KEY} -lt 32 ]; then
+    export JWT_SECRET_KEY=$("$PYTHON_EXEC" -c "import secrets; print(secrets.token_urlsafe(48))")
+fi
+
 echo "[1/4] Initializing database and tables..."
 "$PYTHON_EXEC" -c "import sys; sys.path.insert(0, 'app/api'); from database import init_db; from services.auth import seed_admin_user; from database import SessionLocal; init_db(); db = SessionLocal(); seed_admin_user(db); db.close(); print('Database initialized successfully.')"
 

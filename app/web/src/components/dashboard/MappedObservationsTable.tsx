@@ -43,34 +43,37 @@ export default function MappedObservationsTable({
     );
   });
 
-  const getStatusBadge = (status: string) => {
+  const getStatusBadge = (rawStatus?: string) => {
+    const status = (rawStatus || "OBSERVED").toUpperCase();
     switch (status) {
-      case "verified":
+      case "VERIFIED":
         return (
           <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[11px] font-bold bg-emerald-100 text-emerald-950 border border-emerald-300">
             <span className="w-2 h-2 rounded-full bg-emerald-600" />
             <span>Verified</span>
           </span>
         );
-      case "needs_review":
+      case "NEEDS_FIELD_VISIT":
+      case "NEEDS_REVIEW":
         return (
-          <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[11px] font-bold bg-rose-100 text-rose-950 border border-rose-300">
-            <span className="w-2 h-2 rounded-full bg-rose-600" />
-            <span>Needs Review</span>
+          <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[11px] font-bold bg-amber-100 text-amber-950 border border-amber-300">
+            <span className="w-2 h-2 rounded-full bg-amber-600" />
+            <span>Needs Visit</span>
           </span>
         );
-      case "observed":
+      case "DISMISSED":
+        return (
+          <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[11px] font-bold bg-slate-100 text-slate-700 border border-slate-300">
+            <span className="w-2 h-2 rounded-full bg-slate-500" />
+            <span>Dismissed</span>
+          </span>
+        );
+      case "OBSERVED":
+      default:
         return (
           <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[11px] font-bold bg-sky-100 text-sky-950 border border-sky-300">
             <span className="w-2 h-2 rounded-full bg-sky-600" />
             <span>Observed</span>
-          </span>
-        );
-      default:
-        return (
-          <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[11px] font-bold bg-slate-100 text-slate-800 border border-slate-300">
-            <span className="w-2 h-2 rounded-full bg-slate-500" />
-            <span>Proposed</span>
           </span>
         );
     }
@@ -146,7 +149,7 @@ export default function MappedObservationsTable({
                   }`}
                 >
                   <td className="py-2.5 px-3 whitespace-nowrap">
-                    {getStatusBadge(item.status)}
+                    {getStatusBadge(item.review_status || item.status)}
                   </td>
                   <td className="py-2.5 px-3 whitespace-nowrap">
                     <div className="font-mono font-bold text-slate-900">

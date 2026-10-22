@@ -8,8 +8,14 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from dotenv import load_dotenv
+# Load environment variables if .env files exist
+load_dotenv(".env")
+load_dotenv(os.path.join(os.path.dirname(__file__), "..", "..", ".env"))
+load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))
+
 from database import init_db, SessionLocal
-from services.auth import seed_admin_user
+from services.auth import seed_admin_user, get_jwt_secret_key
 from routers import (
     auth,
     watersheds,
@@ -25,6 +31,9 @@ from routers import (
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Validate JWT secret key at startup - fail fast if missing or shorter than 32 characters
+    get_jwt_secret_key()
+
     # Initialize PostGIS extension and database tables on startup
     init_db()
     # Seed initial admin if env vars provided
@@ -70,6 +79,12 @@ app.include_router(analysis.router)
 app.include_router(changes.router)
 app.include_router(reports.router)
 app.include_router(dashboard.router)
+
+# Mount static files directory for uploaded photos and thumbnails
+from fastapi.staticfiles import StaticFiles
+data_dir = os.path.abspath(os.getenv("DATA_DIR", "./data"))
+if os.path.exists(data_dir):
+    app.mount("/data", StaticFiles(directory=data_dir), name="data")
 
 
 @app.get("/api/v1/health")

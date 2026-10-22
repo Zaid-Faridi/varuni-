@@ -65,12 +65,14 @@ class ImageObservation(Base):
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     object_uri = Column(String, nullable=False)
+    original_filename = Column(String, nullable=True)
     thumbnail_uri = Column(String, nullable=True)
     captured_at = Column(DateTime, nullable=True)
     latitude = Column(Float, nullable=True)
     longitude = Column(Float, nullable=True)
     geom = Column(Geometry('POINT', srid=4326), nullable=True)
     watershed_id = Column(UUID(as_uuid=True), ForeignKey("watersheds.id"), nullable=True)
+    gps_source = Column(String, nullable=True)  # "EXIF GPS", "Manual", "None"
     
     # Deterministic QC fields
     quality_status = Column(String, default="pending")  # good, poor, duplicate, no_gps, outside_monitored_area, pending
@@ -137,6 +139,21 @@ class Intervention(Base):
     description = Column(Text, nullable=True)
     cost_estimate = Column(Float, nullable=True)
     beneficiaries = Column(Integer, nullable=True)
+
+    # Photo & EXIF linking fields
+    image_id = Column(UUID(as_uuid=True), ForeignKey("images.id"), nullable=True)
+    photo_path = Column(String, nullable=True)
+    photo_filename = Column(String, nullable=True)
+    exif_latitude = Column(Float, nullable=True)
+    exif_longitude = Column(Float, nullable=True)
+    exif_timestamp = Column(DateTime, nullable=True)
+    gps_source = Column(String, nullable=True)
+    
+    # Idempotency & Human Review Workflow
+    idempotency_key = Column(String, unique=True, index=True, nullable=True)
+    review_status = Column(String, default="OBSERVED", nullable=False)  # OBSERVED, VERIFIED, NEEDS_FIELD_VISIT, DISMISSED
+    current_reviewer_id = Column(String, nullable=True)
+    current_notes = Column(Text, nullable=True)
     
     # Terrain metrics at point
     nearest_stream_distance_m = Column(Float, nullable=True)
@@ -146,12 +163,29 @@ class Intervention(Base):
     reviewer_decision = Column(String, nullable=True)  # confirm, dismiss, needs_field_visit
     reviewer_id = Column(String, nullable=True)
     reviewed_at = Column(DateTime, nullable=True)
-    image_id = Column(UUID(as_uuid=True), ForeignKey("images.id"), nullable=True)
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)
 
     watershed = relationship("Watershed", back_populates="interventions")
+    image = relationship("ImageObservation", foreign_keys=[image_id])
     change_events = relationship("ChangeEvent", back_populates="intervention")
+    reviews = relationship("ReviewEvent", back_populates="intervention", cascade="all, delete-orphan", order_by="desc(ReviewEvent.created_at)")
+
+
+class ReviewEvent(Base):
+    __tablename__ = "review_events"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    intervention_id = Column(UUID(as_uuid=True), ForeignKey("interventions.id", ondelete="CASCADE"), nullable=False, index=True)
+    from_status = Column(String, nullable=False)
+    to_status = Column(String, nullable=False)
+    decision = Column(String, nullable=False)  # confirm, needs_visit, dismiss
+    notes = Column(Text, nullable=True)
+    reviewer_id = Column(String, nullable=False)
+    created_at = Column(DateTime, default=datetime.datetime.utcnow, nullable=False)
+
+    intervention = relationship("Intervention", back_populates="reviews")
+
 
 
 class StreamSegment(Base):

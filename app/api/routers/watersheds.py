@@ -88,6 +88,30 @@ def list_watersheds(
             except Exception:
                 pass
 
+        # Sync current NDVI if null but observations exist
+        ndvi_val = w.ndvi_current
+        if ndvi_val is None:
+            latest_ts_ndvi = db.query(WatershedTimeSeries).filter(
+                WatershedTimeSeries.watershed_id == w.id,
+                WatershedTimeSeries.metric == "ndvi"
+            ).order_by(WatershedTimeSeries.date.desc()).first()
+            if latest_ts_ndvi:
+                ndvi_val = latest_ts_ndvi.mean
+                w.ndvi_current = latest_ts_ndvi.mean
+                db.commit()
+
+        # Sync current NDWI if null but observations exist
+        ndwi_val = w.ndwi_current
+        if ndwi_val is None:
+            latest_ts_ndwi = db.query(WatershedTimeSeries).filter(
+                WatershedTimeSeries.watershed_id == w.id,
+                WatershedTimeSeries.metric == "ndwi"
+            ).order_by(WatershedTimeSeries.date.desc()).first()
+            if latest_ts_ndwi:
+                ndwi_val = latest_ts_ndwi.mean
+                w.ndwi_current = latest_ts_ndwi.mean
+                db.commit()
+
         results.append(WatershedSummary(
             id=w.id,
             name=w.name,
@@ -95,8 +119,8 @@ def list_watersheds(
             district=w.district,
             block=w.block,
             area_sqkm=w.area_sqkm,
-            ndvi_current=w.ndvi_current,
-            ndwi_current=w.ndwi_current,
+            ndvi_current=ndvi_val,
+            ndwi_current=ndwi_val,
             elevation_min=w.elevation_min,
             elevation_max=w.elevation_max,
             source=w.source,
@@ -231,6 +255,30 @@ def get_watershed(id: uuid.UUID, db: Session = Depends(get_db)):
         except Exception:
             pass
 
+    # Sync current NDVI if null
+    ndvi_val = ws.ndvi_current
+    if ndvi_val is None:
+        latest_ts_ndvi = db.query(WatershedTimeSeries).filter(
+            WatershedTimeSeries.watershed_id == ws.id,
+            WatershedTimeSeries.metric == "ndvi"
+        ).order_by(WatershedTimeSeries.date.desc()).first()
+        if latest_ts_ndvi:
+            ndvi_val = latest_ts_ndvi.mean
+            ws.ndvi_current = latest_ts_ndvi.mean
+            db.commit()
+
+    # Sync current NDWI if null
+    ndwi_val = ws.ndwi_current
+    if ndwi_val is None:
+        latest_ts_ndwi = db.query(WatershedTimeSeries).filter(
+            WatershedTimeSeries.watershed_id == ws.id,
+            WatershedTimeSeries.metric == "ndwi"
+        ).order_by(WatershedTimeSeries.date.desc()).first()
+        if latest_ts_ndwi:
+            ndwi_val = latest_ts_ndwi.mean
+            ws.ndwi_current = latest_ts_ndwi.mean
+            db.commit()
+
     return WatershedResponse(
         id=ws.id,
         name=ws.name,
@@ -245,8 +293,8 @@ def get_watershed(id: uuid.UUID, db: Session = Depends(get_db)):
         drainage_density=ws.drainage_density,
         source=ws.source,
         version=ws.version,
-        ndvi_current=ws.ndvi_current,
-        ndwi_current=ws.ndwi_current,
+        ndvi_current=ndvi_val,
+        ndwi_current=ndwi_val,
         landcover_dominant=ws.landcover_dominant,
         population=ws.population,
         provenance=ws.provenance,

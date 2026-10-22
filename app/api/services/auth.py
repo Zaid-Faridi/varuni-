@@ -17,7 +17,30 @@ except ImportError:
     from app.api.models import User, AuditEvent
 
 
-SECRET_KEY = os.getenv("JWT_SECRET_KEY", "varuni_geospatial_jwt_secure_key_2026_non_negotiable_secret")
+import secrets
+import logging
+
+logger = logging.getLogger("varuni.auth")
+
+
+def get_jwt_secret_key() -> str:
+    """
+    Validates and returns the JWT secret key.
+    Refuses to start / raises a clear error if JWT_SECRET_KEY is missing or shorter than 32 characters.
+    """
+    key = os.getenv("JWT_SECRET_KEY", "").strip()
+    if not key or len(key) < 32:
+        raise RuntimeError(
+            "JWT_SECRET_KEY environment variable is missing or shorter than 32 characters. "
+            "Please configure a secure secret key with at least 32 characters."
+        )
+    return key
+
+
+validate_jwt_secret = get_jwt_secret_key
+
+# Obsolete static fallback removed
+SECRET_KEY = os.getenv("JWT_SECRET_KEY", "")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "120"))
 REFRESH_TOKEN_EXPIRE_DAYS = int(os.getenv("REFRESH_TOKEN_EXPIRE_DAYS", "7"))
@@ -57,7 +80,8 @@ def create_access_token(data: dict, expires_delta: Optional[datetime.timedelta] 
     else:
         expire = datetime.datetime.utcnow() + datetime.timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     to_encode.update({"exp": expire, "type": "access"})
-    return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+    secret = get_jwt_secret_key()
+    return jwt.encode(to_encode, secret, algorithm=ALGORITHM)
 
 
 def create_refresh_token(data: dict, expires_delta: Optional[datetime.timedelta] = None) -> str:
@@ -68,7 +92,8 @@ def create_refresh_token(data: dict, expires_delta: Optional[datetime.timedelta]
     else:
         expire = datetime.datetime.utcnow() + datetime.timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)
     to_encode.update({"exp": expire, "type": "refresh"})
-    return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+    secret = get_jwt_secret_key()
+    return jwt.encode(to_encode, secret, algorithm=ALGORITHM)
 
 
 def decode_token(token: str) -> dict:
@@ -78,8 +103,9 @@ def decode_token(token: str) -> dict:
         role = parts[2] if len(parts) >= 3 else "admin"
         return {"sub": f"demo-{role}", "username": role, "role": role, "type": "access"}
 
+    secret = get_jwt_secret_key()
     try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        payload = jwt.decode(token, secret, algorithms=[ALGORITHM])
         return payload
     except jwt.ExpiredSignatureError:
         raise HTTPException(
@@ -160,7 +186,16 @@ def get_current_user(
         if user:
             return user
 
-    user = db.query(User).filter(User.id == user_id).first()
+    user = None
+    try:
+        parsed_uuid = uuid.UUID(str(user_id))
+        user = db.query(User).filter(User.id == parsed_uuid).first()
+    except (ValueError, AttributeError):
+        pass
+
+    if not user and payload.get("username"):
+        user = db.query(User).filter(User.username == payload.get("username")).first()
+
     if not user:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -222,46 +257,89 @@ def log_audit_event(
 
 def seed_admin_user(db: Session) -> Optional[User]:
     """
-    Seeds initial administrator and role accounts so login works out of the box.
+    Seeds initial administrator and (when DEMO_MODE=1) role accounts.
     """
-    admin_email = os.getenv("ADMIN_EMAIL", "admin@watershed.gov.in")
-    admin_password = os.getenv("ADMIN_PASSWORD", "admin123")
-    admin_username = os.getenv("ADMIN_USERNAME", "admin")
-    admin_fullname = os.getenv("ADMIN_FULL_NAME", "System Administrator")
+    demo_mode_val = os.getenv("DEMO_MODE", "0").strip().lower()
+    demo_mode = demo_mode_val in ("1", "true", "yes")
 
-    demo_users = [
-        (admin_email, admin_username, admin_password, admin_fullname, "admin"),
-        ("analyst@watershed.gov.in", "analyst", "analyst123", "GIS Lead Analyst", "gis_analyst"),
-        ("officer@watershed.gov.in", "officer", "officer123", "Field Survey Officer", "field_officer"),
-        ("reviewer@watershed.gov.in", "reviewer", "reviewer123", "Technical Reviewer", "reviewer"),
-    ]
+    admin_email = os.getenv("ADMIN_EMAIL", "admin@watershed.gov.in").strip()
+    admin_username = os.getenv("ADMIN_USERNAME", "admin").strip()
+    admin_fullname = os.getenv("ADMIN_FULL_NAME", "System Administrator").strip()
+    admin_password = os.getenv("ADMIN_PASSWORD", "").strip()
 
-    primary_admin = None
-
-    for email, username, password, fullname, role in demo_users:
-        user = db.query(User).filter((User.email == email) | (User.username == username)).first()
-        if not user:
-            user = User(
-                id=uuid.uuid4(),
-                email=email,
-                username=username,
-                hashed_password=get_password_hash(password),
-                full_name=fullname,
-                role=role,
-                organization="National Watershed Mission Directorate",
-                is_active=True
+    if not demo_mode:
+        if not admin_password or len(admin_password) < 12:
+            raise RuntimeError(
+                "ADMIN_PASSWORD environment variable is required and must be at least 12 characters long when DEMO_MODE=0."
             )
-            db.add(user)
+    else:
+        if not admin_password:
+            admin_password = secrets.token_urlsafe(16)
+            logger.info(f"[DEMO_MODE] Generated random ADMIN_PASSWORD: {admin_password}")
+            print(f"[DEMO_MODE] Generated random ADMIN_PASSWORD: {admin_password}")
+
+    # Seed or update primary admin
+    primary_admin = db.query(User).filter((User.email == admin_email) | (User.username == admin_username)).first()
+    if not primary_admin:
+        primary_admin = User(
+            id=uuid.uuid4(),
+            email=admin_email,
+            username=admin_username,
+            hashed_password=get_password_hash(admin_password),
+            full_name=admin_fullname,
+            role="admin",
+            organization="National Watershed Mission Directorate",
+            is_active=True
+        )
+        db.add(primary_admin)
+        db.commit()
+        db.refresh(primary_admin)
+    else:
+        if not verify_password(admin_password, primary_admin.hashed_password):
+            primary_admin.hashed_password = get_password_hash(admin_password)
+            primary_admin.is_active = True
             db.commit()
-            db.refresh(user)
-        else:
-            # Update password hash if needed
-            if not verify_password(password, user.hashed_password):
-                user.hashed_password = get_password_hash(password)
-                user.is_active = True
+            db.refresh(primary_admin)
+
+    # Extra role accounts are only created when DEMO_MODE=1
+    if demo_mode:
+        demo_roles = [
+            ("DEMO_ANALYST_PASSWORD", "analyst@watershed.gov.in", "analyst", "GIS Lead Analyst", "gis_analyst"),
+            ("DEMO_OFFICER_PASSWORD", "officer@watershed.gov.in", "officer", "Field Survey Officer", "field_officer"),
+            ("DEMO_REVIEWER_PASSWORD", "reviewer@watershed.gov.in", "reviewer", "Technical Reviewer", "reviewer"),
+        ]
+
+        for env_var, email, username, fullname, role in demo_roles:
+            env_pw = os.getenv(env_var, "").strip()
+            if env_pw:
+                password = env_pw
+                logger.info(f"[DEMO_MODE] Using {env_var} for '{username}' ({role})")
+            else:
+                password = secrets.token_urlsafe(16)
+                msg = f"[DEMO_MODE] Generated random password for '{username}' ({role}): {password}"
+                logger.info(msg)
+                print(msg)
+
+            user = db.query(User).filter((User.email == email) | (User.username == username)).first()
+            if not user:
+                user = User(
+                    id=uuid.uuid4(),
+                    email=email,
+                    username=username,
+                    hashed_password=get_password_hash(password),
+                    full_name=fullname,
+                    role=role,
+                    organization="National Watershed Mission Directorate",
+                    is_active=True
+                )
+                db.add(user)
                 db.commit()
                 db.refresh(user)
-        if role == "admin" and not primary_admin:
-            primary_admin = user
+            else:
+                if not verify_password(password, user.hashed_password):
+                    user.hashed_password = get_password_hash(password)
+                    user.is_active = True
+                    db.commit()
+                    db.refresh(user)
 
     return primary_admin

@@ -12,6 +12,7 @@ import {
   fetchAnomalyAnalysis,
   WatershedSummary,
   ImageInfo,
+  InterventionInfo,
   AnomalyAnalysisResponse,
   getImageUrl,
 } from "@/lib/api";
@@ -64,6 +65,7 @@ const LocationPickerMap = dynamic(
 export default function AddInterventionPage() {
   const router = useRouter();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const confirmationPanelRef = useRef<HTMLDivElement | null>(null);
 
   // Watersheds list from backend
   const [watersheds, setWatersheds] = useState<WatershedSummary[]>([]);
@@ -92,9 +94,15 @@ export default function AddInterventionPage() {
   const [anomaly, setAnomaly] = useState<AnomalyAnalysisResponse | null>(null);
   const [isLoadingAnomaly, setIsLoadingAnomaly] = useState(false);
 
-  // Submission state
+  // Idempotency & Submission state (Part A)
+  const [idempotencyKey, setIdempotencyKey] = useState<string>(() =>
+    typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2) + Date.now().toString(36)
+  );
   const [isSaving, setIsSaving] = useState(false);
-  const [saveSuccess, setSaveSuccess] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+  const [registeredRecord, setRegisteredRecord] = useState<InterventionInfo | null>(null);
+  const [showToast, setShowToast] = useState(false);
 
   // Load watersheds on mount
   useEffect(() => {
@@ -141,7 +149,7 @@ export default function AddInterventionPage() {
   // Upload photo to backend
   const handleFileProcess = async (file: File) => {
     if (!file.type.match(/^image\/(jpeg|jpg|png)$/i)) {
-      alert("Please upload a valid image file (JPG, JPEG, or PNG).");
+      setUploadError("Please upload a valid image file (JPG, JPEG, or PNG).");
       return;
     }
 
@@ -207,10 +215,50 @@ export default function AddInterventionPage() {
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
-  // Submit intervention
-  const handleSaveIntervention = async (e: React.FormEvent) => {
-    e.preventDefault();
+  // Reset entire form only on "Register another"
+  const handleRegisterAnother = () => {
+    setName("");
+    setType("Check Dam");
+    setDate(new Date().toISOString().split("T")[0]);
+    setDescription("");
+    setCostEstimate("");
+    setBeneficiaries("");
+    setImageFile(null);
+    setUploadedImage(null);
+    setUploadError(null);
+    setSaveError(null);
+    setFieldErrors({});
+    setRegisteredRecord(null);
+    setShowToast(false);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+    // Generate new idempotency key for new registration
+    const newKey = typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2) + Date.now().toString(36);
+    setIdempotencyKey(newKey);
+  };
+
+  // Submit intervention (Part A)
+  const handleSaveIntervention = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (isSaving) return; // Prevent double submission
+
+    setSaveError(null);
+    setFieldErrors({});
     setIsSaving(true);
+
+    // Validate fields
+    const errors: Record<string, string> = {};
+    if (latitude === undefined || latitude === null || isNaN(latitude)) {
+      errors.latitude = "Valid latitude is required";
+    }
+    if (longitude === undefined || longitude === null || isNaN(longitude)) {
+      errors.longitude = "Valid longitude is required";
+    }
+    if (Object.keys(errors).length > 0) {
+      setFieldErrors(errors);
+      setSaveError("Please check validation errors on the form.");
+      setIsSaving(false);
+      return;
+    }
 
     try {
       const created = await createIntervention({
@@ -224,14 +272,43 @@ export default function AddInterventionPage() {
         cost_estimate: costEstimate ? parseFloat(costEstimate) : undefined,
         beneficiaries: beneficiaries ? parseInt(beneficiaries, 10) : undefined,
         source: uploadedImage ? "Geo-Tagged Field Photo" : "Manual Ground Survey",
-      });
+        image_id: uploadedImage?.id,
+        photo_path: uploadedImage?.object_uri,
+        photo_filename: uploadedImage?.original_filename || imageFile?.name,
+        exif_latitude: uploadedImage?.latitude,
+        exif_longitude: uploadedImage?.longitude,
+        exif_timestamp: uploadedImage?.captured_at,
+        gps_source: uploadedImage ? (uploadedImage.latitude ? (uploadedImage.gps_source || "EXIF GPS") : "Manual Location") : "Manual Ground Survey",
+        idempotency_key: idempotencyKey,
+      }, idempotencyKey);
 
-      setSaveSuccess(true);
+      // Verify server record and ID exist
+      if (!created || !created.id) {
+        throw new Error("Server did not return a valid persistent record.");
+      }
+
+      setRegisteredRecord(created);
+      setShowToast(true);
+
+      // Shift focus to confirmation panel for accessibility
       setTimeout(() => {
-        router.push(`/interventions/${created.id}`);
-      }, 700);
+        confirmationPanelRef.current?.focus();
+      }, 50);
     } catch (err: any) {
-      alert(`Error saving intervention: ${err.message}`);
+      const errMsg = err.message || "Failed to register intervention.";
+      if (errMsg.includes("401")) {
+        setSaveError("Authentication error (401): Please ensure you are logged in.");
+      } else if (errMsg.includes("403")) {
+        setSaveError("Permission denied (403): You do not have permission to register interventions.");
+      } else if (errMsg.includes("409")) {
+        setSaveError("Conflict (409): A record with this idempotency key or identifier already exists.");
+      } else if (errMsg.includes("422")) {
+        setSaveError("Validation Error (422): Server rejected the payload. Please verify field formats.");
+      } else if (errMsg.includes("500") || errMsg.includes("502") || errMsg.includes("503")) {
+        setSaveError("Server Error (5xx): The backend database encountered an issue. Please try again.");
+      } else {
+        setSaveError(errMsg);
+      }
     } finally {
       setIsSaving(false);
     }
@@ -242,10 +319,34 @@ export default function AddInterventionPage() {
     [watersheds, selectedWatershedId]
   );
 
+
   return (
     <AppLayout>
+      {/* Toast Announcement Banner */}
+      {showToast && registeredRecord && (
+        <div
+          role="status"
+          aria-live="polite"
+          className="fixed top-4 right-4 z-50 bg-emerald-800 text-white px-4 py-3 rounded shadow-lg flex items-center gap-3 animate-in fade-in slide-in-from-top duration-300 border border-emerald-600"
+        >
+          <CheckCircle2 className="w-5 h-5 text-emerald-300 shrink-0" />
+          <div>
+            <div className="text-xs font-bold">Intervention registered successfully</div>
+            <div className="text-[11px] text-emerald-200 font-mono">Server ID: {registeredRecord.id}</div>
+          </div>
+          <button
+            type="button"
+            onClick={() => setShowToast(false)}
+            className="ml-2 text-emerald-300 hover:text-white text-xs font-bold"
+            aria-label="Close notification"
+          >
+            &times;
+          </button>
+        </div>
+      )}
+
       {/* Header Banner */}
-      <div className="bg-white border border-slate-300 rounded p-4 shadow-2xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+      <div className="bg-white border border-slate-300 rounded p-4 shadow-2xs flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
         <div>
           <div className="flex items-center gap-2">
             <UploadCloud className="w-5 h-5 text-emerald-700" />
@@ -269,12 +370,143 @@ export default function AddInterventionPage() {
         </Link>
       </div>
 
-      {saveSuccess && (
-        <div className="bg-emerald-100 border border-emerald-300 text-emerald-950 p-4 rounded text-xs font-semibold flex items-center gap-3 animate-in fade-in duration-200">
-          <CheckCircle2 className="w-5 h-5 text-emerald-700 shrink-0" />
-          <div>
-            <strong className="block text-sm">Intervention Registered Successfully!</strong>
-            <span>Saved to PostGIS database. Redirecting to detail view...</span>
+      {/* Persistent Confirmation Panel (Requirement A3 & A7) */}
+      {registeredRecord && (
+        <div
+          ref={confirmationPanelRef}
+          tabIndex={-1}
+          role="region"
+          aria-live="polite"
+          className="bg-emerald-50 border-2 border-emerald-500 rounded-lg p-5 shadow-sm space-y-4 mb-5 focus:outline-none focus:ring-2 focus:ring-emerald-600 animate-in fade-in duration-200"
+          id="registration-confirmation-panel"
+        >
+          <div className="flex items-start justify-between gap-3 pb-3 border-b border-emerald-200">
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-full bg-emerald-600 text-white flex items-center justify-center shrink-0">
+                <CheckCircle2 className="w-5 h-5" />
+              </div>
+              <div>
+                <h2 className="text-base font-extrabold text-emerald-950">
+                  Intervention registered successfully
+                </h2>
+                <p className="text-xs text-emerald-800">
+                  Record persisted in PostgreSQL / PostGIS database.
+                </p>
+              </div>
+            </div>
+            <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold bg-amber-100 text-amber-900 border border-amber-300">
+              Observed / Pending review
+            </span>
+          </div>
+
+          {/* Record Details Grid */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 bg-white/80 p-3.5 rounded border border-emerald-200 text-xs">
+            <div>
+              <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">Record Name</span>
+              <span className="font-bold text-slate-900">{registeredRecord.name}</span>
+            </div>
+            <div>
+              <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">Server ID</span>
+              <span className="font-mono font-semibold text-slate-800 break-all select-all">{registeredRecord.id}</span>
+            </div>
+            <div>
+              <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">Intervention Type</span>
+              <span className="font-semibold text-slate-900 capitalize">{registeredRecord.type.replace(/_/g, " ")}</span>
+            </div>
+            <div>
+              <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">Coordinates</span>
+              <span className="font-mono text-slate-900">
+                {registeredRecord.latitude?.toFixed(5)}° N, {registeredRecord.longitude?.toFixed(5)}° E
+              </span>
+            </div>
+          </div>
+
+          {/* Photo & GPS Source */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white/80 p-3.5 rounded border border-emerald-200 text-xs">
+            <div className="flex items-center gap-3">
+              {registeredRecord.photo_path ? (
+                <div className="relative w-14 h-14 rounded border border-emerald-300 overflow-hidden bg-slate-100 shrink-0">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={getImageUrl(registeredRecord.photo_path)}
+                    alt="Uploaded field photo"
+                    className="w-full h-full object-cover"
+                  />
+                </div>
+              ) : (
+                <div className="w-14 h-14 rounded border border-dashed border-slate-300 bg-slate-50 flex items-center justify-center text-slate-400 shrink-0">
+                  <ImageIcon className="w-6 h-6" />
+                </div>
+              )}
+              <div>
+                <div className="font-bold text-slate-900">
+                  {registeredRecord.photo_path ? "Field Photo Uploaded & Linked" : "No photo uploaded (Manual Ground Survey)"}
+                </div>
+                <div className="text-slate-600 text-[11px]">
+                  GPS Source: <strong className="text-slate-900">{registeredRecord.gps_source || "Manual Ground Survey"}</strong>
+                </div>
+              </div>
+            </div>
+
+            {/* Satellite Analysis Status Line (Requirement A4) */}
+            <div className="text-right sm:border-l sm:border-emerald-200 sm:pl-4">
+              <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">Satellite Pipeline</span>
+              <div className="text-xs font-semibold text-slate-700 mt-0.5">
+                {isLoadingAnomaly
+                  ? "Satellite analysis: running..."
+                  : anomaly
+                  ? "Satellite analysis: complete"
+                  : "Satellite analysis: queued / no data"}
+              </div>
+            </div>
+          </div>
+
+          {/* Action Buttons (Requirement A3) */}
+          <div className="flex flex-wrap items-center gap-3 pt-2">
+            <Link
+              href={`/interventions/${registeredRecord.id}`}
+              className="px-4 py-2 bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-bold rounded shadow-xs transition-colors flex items-center gap-1.5"
+            >
+              <span>View record</span>
+              <ArrowRight className="w-3.5 h-3.5" />
+            </Link>
+            <button
+              type="button"
+              onClick={handleRegisterAnother}
+              className="px-4 py-2 bg-white hover:bg-slate-50 text-slate-800 border border-slate-300 text-xs font-bold rounded shadow-2xs transition-colors"
+            >
+              + Register another
+            </button>
+            <Link
+              href="/gis-map"
+              className="px-4 py-2 bg-white hover:bg-slate-50 text-slate-800 border border-slate-300 text-xs font-bold rounded shadow-2xs transition-colors"
+            >
+              Go to map &rarr;
+            </Link>
+          </div>
+        </div>
+      )}
+
+      {/* Failure Error Alert (Requirement A5) */}
+      {saveError && (
+        <div
+          role="alert"
+          className="bg-rose-50 border-2 border-rose-400 text-rose-900 p-4 rounded-lg text-xs space-y-2 mb-5 animate-in fade-in duration-200"
+        >
+          <div className="flex items-center gap-2 font-bold text-sm text-rose-950">
+            <AlertTriangle className="w-5 h-5 text-rose-600 shrink-0" />
+            <span>Registration Error</span>
+          </div>
+          <p className="text-rose-800">{saveError}</p>
+          <div className="pt-1">
+            <button
+              type="button"
+              onClick={() => handleSaveIntervention()}
+              disabled={isSaving}
+              className="px-3.5 py-1.5 bg-rose-700 hover:bg-rose-800 text-white rounded font-bold text-xs shadow-2xs transition-colors cursor-pointer disabled:opacity-75"
+            >
+              Try again
+            </button>
           </div>
         </div>
       )}
@@ -813,13 +1045,13 @@ export default function AddInterventionPage() {
               <button
                 type="submit"
                 disabled={isSaving}
-                className="w-full py-3 px-4 bg-[#166534] hover:bg-[#14532d] text-white rounded font-bold text-xs uppercase tracking-wider flex items-center justify-center gap-2 shadow-xs transition-colors cursor-pointer disabled:opacity-75"
+                className="w-full py-3 px-4 bg-[#166534] hover:bg-[#14532d] text-white rounded font-bold text-xs uppercase tracking-wider flex items-center justify-center gap-2 shadow-xs transition-colors cursor-pointer disabled:opacity-70 disabled:cursor-not-allowed"
                 id="save-intervention-btn"
               >
                 {isSaving ? (
                   <>
                     <RefreshCw className="w-4 h-4 animate-spin" />
-                    <span>Saving to PostGIS Database...</span>
+                    <span>Registering...</span>
                   </>
                 ) : (
                   <>
