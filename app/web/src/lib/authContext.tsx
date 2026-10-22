@@ -1,7 +1,7 @@
 "use client";
 
 import React, { createContext, useContext, useEffect, useState } from "react";
-import { useRouter, usePathname } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { AUTH_TOKEN_KEY, AUTH_USER_KEY } from "./api";
 
 export interface User {
@@ -38,11 +38,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const router = useRouter();
-  const pathname = usePathname();
 
   const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
-  // Validate existing token on mount
+  // Validate existing token on mount by calling the current user endpoint
   useEffect(() => {
     const initAuth = async () => {
       const token = typeof window !== "undefined" ? localStorage.getItem(AUTH_TOKEN_KEY) : null;
@@ -64,23 +63,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           setUser(userData);
           localStorage.setItem(AUTH_USER_KEY, JSON.stringify(userData));
         } else {
-          // Token expired or invalid
+          // Token expired, invalid, or unauthorized - clear stored auth
           localStorage.removeItem(AUTH_TOKEN_KEY);
           localStorage.removeItem(AUTH_USER_KEY);
           setUser(null);
+          if (typeof window !== "undefined" && !window.location.pathname.startsWith("/login")) {
+            router.push("/login");
+          }
         }
       } catch (err) {
         console.warn("Could not verify session with auth server:", err);
-        // Fallback to cached user if offline
-        const cached = localStorage.getItem(AUTH_USER_KEY);
-        if (cached) {
-          try {
-            setUser(JSON.parse(cached));
-          } catch {
-            setUser(null);
-          }
-        } else {
-          setUser(null);
+        // Never blindly trust cached localStorage when the backend is unreachable
+        localStorage.removeItem(AUTH_TOKEN_KEY);
+        localStorage.removeItem(AUTH_USER_KEY);
+        setUser(null);
+        if (typeof window !== "undefined" && !window.location.pathname.startsWith("/login")) {
+          router.push("/login");
         }
       } finally {
         setIsLoading(false);
@@ -88,27 +86,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
 
     initAuth();
-  }, [API_BASE]);
+  }, [API_BASE, router]);
 
   const login = async (usernameOrEmail: string, password: string): Promise<{ success: boolean; error?: string }> => {
     setIsLoading(true);
-    const trimmedUser = usernameOrEmail.trim().toLowerCase();
-
-    // Map common demo usernames or roles
-    const roleMapping: Record<string, string> = {
-      admin: "admin",
-      "admin@watershed.gov.in": "admin",
-      analyst: "gis_analyst",
-      "analyst@watershed.gov.in": "gis_analyst",
-      gis_analyst: "gis_analyst",
-      officer: "field_officer",
-      "officer@watershed.gov.in": "field_officer",
-      field_officer: "field_officer",
-      reviewer: "reviewer",
-      "reviewer@watershed.gov.in": "reviewer",
-      viewer: "viewer",
-      "viewer@watershed.gov.in": "viewer",
-    };
 
     try {
       const res = await fetch(`${API_BASE}/api/v1/auth/login`, {
@@ -130,54 +111,76 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return { success: true };
       }
 
-      // If backend responded with error, but it's a known demo user/password
-      if (roleMapping[trimmedUser] || password.endsWith("123") || trimmedUser.includes("demo")) {
-        return await demoLogin(roleMapping[trimmedUser] || "admin", false);
+      // Handle non-2xx responses with user-friendly messages
+      if (res.status === 429) {
+        const errData = await res.json().catch(() => ({}));
+        return {
+          success: false,
+          error: errData.detail || "Too many failed login attempts. Please wait a moment before trying again.",
+        };
       }
 
-      const errData = await res.json().catch(() => ({ detail: "Authentication failed" }));
-      const message = errData.detail || `Login error (${res.status})`;
-      return { success: false, error: message };
-    } catch (err: any) {
-      // Network error or backend offline fallback
-      if (roleMapping[trimmedUser] || trimmedUser.includes("demo") || trimmedUser === "admin") {
-        return await demoLogin(roleMapping[trimmedUser] || "admin", false);
+      if (res.status === 401 || res.status === 400 || res.status === 403) {
+        const errData = await res.json().catch(() => ({}));
+        return {
+          success: false,
+          error: errData.detail || "Invalid username/email or password. Please verify your credentials.",
+        };
       }
-      return { success: false, error: err.message || "Network error communicating with authentication server." };
+
+      const errData = await res.json().catch(() => ({}));
+      return {
+        success: false,
+        error: errData.detail || `Authentication failed (Server HTTP ${res.status}).`,
+      };
+    } catch {
+      // Network error or server unreachable - zero synthetic data policy
+      return {
+        success: false,
+        error: "Server unreachable. Cannot connect to the authentication service. Please check your network or verify the backend is running.",
+      };
     } finally {
       setIsLoading(false);
     }
   };
 
-  const demoLogin = async (role: string = "admin", tryServer: boolean = true): Promise<{ success: boolean; error?: string }> => {
-    setIsLoading(true);
-    const roleProfiles: Record<string, [string, string]> = {
-      admin: ["admin", "System Administrator"],
-      gis_analyst: ["analyst", "GIS Lead Analyst"],
-      field_officer: ["officer", "Field Survey Officer"],
-      reviewer: ["reviewer", "Technical Reviewer"],
-      viewer: ["viewer", "Public Viewer"],
+  const demoLogin = async (role: string = "admin"): Promise<{ success: boolean; error?: string }> => {
+    // Only available when NEXT_PUBLIC_DEMO_MODE=1
+    if (process.env.NEXT_PUBLIC_DEMO_MODE !== "1") {
+      return { success: false, error: "Demonstration login is disabled." };
+    }
+
+    const demoCreds: Record<string, [string, string]> = {
+      admin: [
+        process.env.NEXT_PUBLIC_ADMIN_USERNAME || "admin",
+        process.env.NEXT_PUBLIC_ADMIN_PASSWORD || "",
+      ],
+      gis_analyst: [
+        "analyst",
+        process.env.NEXT_PUBLIC_DEMO_ANALYST_PASSWORD || "",
+      ],
+      field_officer: [
+        "officer",
+        process.env.NEXT_PUBLIC_DEMO_OFFICER_PASSWORD || "",
+      ],
+      reviewer: [
+        "reviewer",
+        process.env.NEXT_PUBLIC_DEMO_REVIEWER_PASSWORD || "",
+      ],
     };
 
-    const creds = roleProfiles[role] || roleProfiles.admin;
-    const [uname, fname] = creds;
+    const creds = demoCreds[role] || demoCreds.admin;
+    const [uname, pass] = creds;
 
-    // Direct fallback demo user session
-    const demoUser: User = {
-      id: `demo-${role}`,
-      email: `${uname}@watershed.gov.in`,
-      username: uname,
-      full_name: fname,
-      role: role,
-      organization: "National Watershed Mission Directorate",
-      is_active: true,
-    };
+    if (!pass) {
+      return {
+        success: false,
+        error: `Demo password not configured for role '${role}'. Set NEXT_PUBLIC_DEMO_${role.toUpperCase()}_PASSWORD in environment.`,
+      };
+    }
 
-    localStorage.setItem(AUTH_TOKEN_KEY, `demo_token_${role}_${Date.now()}`);
-    localStorage.setItem(AUTH_USER_KEY, JSON.stringify(demoUser));
-    setUser(demoUser);
-    setIsLoading(false);
-    return { success: true };
+    // Call the REAL login API - no local demo tokens!
+    return await login(uname, pass);
   };
 
   const logout = async () => {
