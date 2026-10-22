@@ -10,7 +10,6 @@ import {
   Eye,
   EyeOff,
   ArrowRight,
-  Info,
   RefreshCw,
 } from "lucide-react";
 import VaruniLogo from "@/components/common/VaruniLogo";
@@ -24,6 +23,8 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const isDemoMode = process.env.NEXT_PUBLIC_DEMO_MODE === "1";
 
   const handleQuickLogin = async (role: string = "admin") => {
     setError(null);
@@ -105,31 +106,38 @@ export default function LoginPage() {
           {/* Form Content */}
           <div className="p-6 space-y-4">
             {error && (
-              <div className="p-3 bg-rose-50 border border-rose-300 text-rose-900 text-xs rounded font-medium flex items-center gap-2 animate-in fade-in duration-150">
+              <div
+                role="alert"
+                className="p-3 bg-rose-50 border border-rose-300 text-rose-900 text-xs rounded font-medium flex items-center gap-2 animate-in fade-in duration-150"
+              >
                 <span className="w-2 h-2 rounded-full bg-rose-600 shrink-0" />
-                <span>{error}</span>
+                <span id="login-error-message">{error}</span>
               </div>
             )}
 
-            {/* Instant Demo Sign-in Button */}
-            <button
-              type="button"
-              onClick={() => handleQuickLogin("admin")}
-              disabled={isLoading}
-              className="w-full py-2.5 px-4 bg-emerald-700 hover:bg-emerald-800 text-white rounded font-bold text-xs flex items-center justify-center gap-2 shadow-sm transition-all cursor-pointer disabled:opacity-50"
-            >
-              <ShieldCheck className="w-4 h-4" />
-              <span>⚡ Instant Demo Sign In (Enter Dashboard)</span>
-              <ArrowRight className="w-4 h-4" />
-            </button>
+            {/* Instant Demo Sign-in Button - Only shown when NEXT_PUBLIC_DEMO_MODE=1 */}
+            {isDemoMode && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => handleQuickLogin("admin")}
+                  disabled={isLoading}
+                  className="w-full py-2.5 px-4 bg-emerald-700 hover:bg-emerald-800 text-white rounded font-bold text-xs flex items-center justify-center gap-2 shadow-sm transition-all cursor-pointer disabled:opacity-50"
+                >
+                  <ShieldCheck className="w-4 h-4" />
+                  <span>⚡ Instant Demo Sign In (Enter Dashboard)</span>
+                  <ArrowRight className="w-4 h-4" />
+                </button>
 
-            <div className="relative flex py-1 items-center">
-              <div className="flex-grow border-t border-slate-200"></div>
-              <span className="flex-shrink mx-3 text-[10px] uppercase font-bold text-slate-400">
-                Or Sign In with Credentials
-              </span>
-              <div className="flex-grow border-t border-slate-200"></div>
-            </div>
+                <div className="relative flex py-1 items-center">
+                  <div className="flex-grow border-t border-slate-200"></div>
+                  <span className="flex-shrink mx-3 text-[10px] uppercase font-bold text-slate-400">
+                    Or Sign In with Credentials
+                  </span>
+                  <div className="flex-grow border-t border-slate-200"></div>
+                </div>
+              </>
+            )}
 
             <form onSubmit={handleSubmit} className="space-y-4">
               {/* Username or Email Field */}
@@ -194,55 +202,51 @@ export default function LoginPage() {
               </button>
             </form>
 
-            {/* Quick Demo Sign-in Section */}
-            <div className="pt-3 border-t border-slate-200 space-y-2">
-              <div className="flex items-center justify-between text-[11px] text-slate-500 font-semibold uppercase tracking-wider">
-                <span>1-Click Role Login:</span>
+            {/* Quick Demo Sign-in Section - Only shown when NEXT_PUBLIC_DEMO_MODE=1 */}
+            {isDemoMode && (
+              <div className="pt-3 border-t border-slate-200 space-y-2">
+                <div className="flex items-center justify-between text-[11px] text-slate-500 font-semibold uppercase tracking-wider">
+                  <span>1-Click Role Login:</span>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => handleQuickLogin("admin")}
+                    className="px-2.5 py-1.5 bg-slate-100 hover:bg-emerald-50 hover:text-emerald-900 hover:border-emerald-300 border border-slate-300 rounded text-xs font-semibold text-slate-700 flex items-center gap-1.5 transition-colors cursor-pointer text-left"
+                  >
+                    <span className="w-2 h-2 rounded-full bg-emerald-600 shrink-0" />
+                    <span>👑 Admin</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => handleQuickLogin("gis_analyst")}
+                    className="px-2.5 py-1.5 bg-slate-100 hover:bg-sky-50 hover:text-sky-900 hover:border-sky-300 border border-slate-300 rounded text-xs font-semibold text-slate-700 flex items-center gap-1.5 transition-colors cursor-pointer text-left"
+                  >
+                    <span className="w-2 h-2 rounded-full bg-sky-600 shrink-0" />
+                    <span>🛰️ Analyst</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => handleQuickLogin("field_officer")}
+                    className="px-2.5 py-1.5 bg-slate-100 hover:bg-amber-50 hover:text-amber-900 hover:border-amber-300 border border-slate-300 rounded text-xs font-semibold text-slate-700 flex items-center gap-1.5 transition-colors cursor-pointer text-left"
+                  >
+                    <span className="w-2 h-2 rounded-full bg-amber-600 shrink-0" />
+                    <span>📋 Officer</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => handleQuickLogin("reviewer")}
+                    className="px-2.5 py-1.5 bg-slate-100 hover:bg-purple-50 hover:text-purple-900 hover:border-purple-300 border border-slate-300 rounded text-xs font-semibold text-slate-700 flex items-center gap-1.5 transition-colors cursor-pointer text-left"
+                  >
+                    <span className="w-2 h-2 rounded-full bg-purple-600 shrink-0" />
+                    <span>🔍 Reviewer</span>
+                  </button>
+                </div>
               </div>
-              <div className="grid grid-cols-2 gap-2">
-                <button
-                  type="button"
-                  onClick={() => handleQuickLogin("admin")}
-                  className="px-2.5 py-1.5 bg-slate-100 hover:bg-emerald-50 hover:text-emerald-900 hover:border-emerald-300 border border-slate-300 rounded text-xs font-semibold text-slate-700 flex items-center gap-1.5 transition-colors cursor-pointer text-left"
-                >
-                  <span className="w-2 h-2 rounded-full bg-emerald-600 shrink-0" />
-                  <span>👑 Admin</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => handleQuickLogin("gis_analyst")}
-                  className="px-2.5 py-1.5 bg-slate-100 hover:bg-sky-50 hover:text-sky-900 hover:border-sky-300 border border-slate-300 rounded text-xs font-semibold text-slate-700 flex items-center gap-1.5 transition-colors cursor-pointer text-left"
-                >
-                  <span className="w-2 h-2 rounded-full bg-sky-600 shrink-0" />
-                  <span>🛰️ Analyst</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => handleQuickLogin("field_officer")}
-                  className="px-2.5 py-1.5 bg-slate-100 hover:bg-amber-50 hover:text-amber-900 hover:border-amber-300 border border-slate-300 rounded text-xs font-semibold text-slate-700 flex items-center gap-1.5 transition-colors cursor-pointer text-left"
-                >
-                  <span className="w-2 h-2 rounded-full bg-amber-600 shrink-0" />
-                  <span>📋 Officer</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => handleQuickLogin("reviewer")}
-                  className="px-2.5 py-1.5 bg-slate-100 hover:bg-purple-50 hover:text-purple-900 hover:border-purple-300 border border-slate-300 rounded text-xs font-semibold text-slate-700 flex items-center gap-1.5 transition-colors cursor-pointer text-left"
-                >
-                  <span className="w-2 h-2 rounded-full bg-purple-600 shrink-0" />
-                  <span>🔍 Reviewer</span>
-                </button>
-              </div>
-            </div>
-
-            <div className="pt-2 text-center">
-              <p className="text-[11px] text-slate-500">
-                Sign in with credentials set in your environment (<code className="bg-slate-100 px-1 py-0.5 rounded text-slate-700 font-mono">ADMIN_PASSWORD</code>) or use 1-click role login.
-              </p>
-            </div>
+            )}
           </div>
         </div>
       </main>

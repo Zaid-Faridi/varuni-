@@ -100,11 +100,24 @@ export const runInterventionChangeDetection = (id: string, params?: { metric?: s
 
 // ─── Images & Quality Control ─────────────────────────────
 export const uploadFieldPhoto = async (formData: FormData): Promise<ImageInfo> => {
+  const token = typeof window !== "undefined" ? localStorage.getItem(AUTH_TOKEN_KEY) : null;
+  const headers: Record<string, string> = {};
+  if (token) {
+    headers["Authorization"] = `Bearer ${token}`;
+  }
   const res = await fetch(`${API_BASE}/api/v1/images/`, {
     method: "POST",
+    headers,
     body: formData,
   });
   if (!res.ok) {
+    if (res.status === 401 && typeof window !== "undefined") {
+      localStorage.removeItem(AUTH_TOKEN_KEY);
+      localStorage.removeItem(AUTH_USER_KEY);
+      if (!window.location.pathname.startsWith("/login")) {
+        window.location.href = "/login";
+      }
+    }
     const errorText = await res.text().catch(() => "");
     throw new Error(`Upload Error ${res.status}: ${res.statusText} ${errorText}`);
   }
