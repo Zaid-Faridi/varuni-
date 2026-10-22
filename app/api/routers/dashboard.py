@@ -33,6 +33,12 @@ def get_dashboard_stats(db: Session = Depends(get_db)):
     no_gps_images = db.query(ImageObservation).filter(ImageObservation.quality_status.in_(["no_gps", "outside_monitored_area"])).count()
     quality_alerts_count = flagged_rasters + no_gps_images
 
+    # Review status breakdowns directly computed from DB
+    verified_itvs = db.query(Intervention).filter(Intervention.review_status == "VERIFIED").count()
+    needs_visit_itvs = db.query(Intervention).filter(Intervention.review_status == "NEEDS_FIELD_VISIT").count()
+    dismissed_itvs = db.query(Intervention).filter(Intervention.review_status == "DISMISSED").count()
+    observed_itvs = db.query(Intervention).filter(Intervention.review_status == "OBSERVED").count()
+
     return DashboardStats(
         total_watersheds=total_ws,
         total_images=total_imgs,
@@ -41,7 +47,11 @@ def get_dashboard_stats(db: Session = Depends(get_db)):
         avg_ndvi=round(float(avg_ndvi), 4) if avg_ndvi is not None else None,
         avg_ndwi=round(float(avg_ndwi), 4) if avg_ndwi is not None else None,
         total_water_area_sqkm=round(float(total_water), 2) if total_water is not None else None,
-        quality_alerts=quality_alerts_count
+        quality_alerts=quality_alerts_count,
+        verified_interventions=verified_itvs,
+        needs_visit_interventions=needs_visit_itvs,
+        dismissed_interventions=dismissed_itvs,
+        observed_interventions=observed_itvs
     )
 
 

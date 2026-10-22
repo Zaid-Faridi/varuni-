@@ -140,7 +140,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return { success: false, error: message };
     } catch (err: any) {
       // Network error or backend offline fallback
-      if (roleMapping[trimmedUser] || password.endsWith("123") || trimmedUser.includes("demo") || trimmedUser === "admin") {
+      if (roleMapping[trimmedUser] || trimmedUser.includes("demo") || trimmedUser === "admin") {
         return await demoLogin(roleMapping[trimmedUser] || "admin", false);
       }
       return { success: false, error: err.message || "Network error communicating with authentication server." };
@@ -151,37 +151,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const demoLogin = async (role: string = "admin", tryServer: boolean = true): Promise<{ success: boolean; error?: string }> => {
     setIsLoading(true);
-    const roleCreds: Record<string, [string, string, string]> = {
-      admin: ["admin", "admin123", "System Administrator"],
-      gis_analyst: ["analyst", "analyst123", "GIS Lead Analyst"],
-      field_officer: ["officer", "officer123", "Field Survey Officer"],
-      reviewer: ["reviewer", "reviewer123", "Technical Reviewer"],
-      viewer: ["viewer", "viewer123", "Public Viewer"],
+    const roleProfiles: Record<string, [string, string]> = {
+      admin: ["admin", "System Administrator"],
+      gis_analyst: ["analyst", "GIS Lead Analyst"],
+      field_officer: ["officer", "Field Survey Officer"],
+      reviewer: ["reviewer", "Technical Reviewer"],
+      viewer: ["viewer", "Public Viewer"],
     };
 
-    const creds = roleCreds[role] || roleCreds.admin;
-    const [uname, pass, fname] = creds;
-
-    // Try server login first if requested
-    if (tryServer) {
-      try {
-        const res = await fetch(`${API_BASE}/api/v1/auth/login`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ username_or_email: uname, password: pass }),
-        });
-        if (res.ok) {
-          const tokenData = await res.json();
-          localStorage.setItem(AUTH_TOKEN_KEY, tokenData.access_token);
-          localStorage.setItem(AUTH_USER_KEY, JSON.stringify(tokenData.user));
-          setUser(tokenData.user);
-          setIsLoading(false);
-          return { success: true };
-        }
-      } catch {
-        // Fallback to local session
-      }
-    }
+    const creds = roleProfiles[role] || roleProfiles.admin;
+    const [uname, fname] = creds;
 
     // Direct fallback demo user session
     const demoUser: User = {

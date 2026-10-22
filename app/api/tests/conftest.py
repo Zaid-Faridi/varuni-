@@ -8,6 +8,11 @@ from sqlalchemy.orm import sessionmaker
 # Add app/api to sys.path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
+# Configure test environment variables for pytest session
+os.environ.setdefault("JWT_SECRET_KEY", "pytest_test_session_jwt_secret_key_with_at_least_32_chars!")
+os.environ.setdefault("ADMIN_PASSWORD", "test_admin_secure_password_min_12_chars")
+os.environ.setdefault("DEMO_MODE", "0")
+
 from database import Base, get_db, engine
 from main import app
 import models
@@ -39,7 +44,7 @@ def db_session():
     session = TestingSessionLocal()
     # Truncate tables between tests for clean isolation
     try:
-        session.execute(text("TRUNCATE TABLE watershed_time_series, raster_assets, change_events, interventions, images, analysis_results, analysis_jobs, satellite_scenes, watersheds CASCADE;"))
+        session.execute(text("TRUNCATE TABLE watershed_time_series, raster_assets, change_events, interventions, images, analysis_results, analysis_jobs, satellite_scenes, watersheds, audit_events, users CASCADE;"))
         session.commit()
     except Exception:
         session.rollback()

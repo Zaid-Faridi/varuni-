@@ -19,7 +19,7 @@ from sqlalchemy import text
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "app", "api"))
 
 from database import SessionLocal, init_db
-from models import ImageObservation, Intervention
+from models import ImageObservation, Intervention, Watershed
 from routers.images import extract_exif_metadata, INDIA_BBOX, compute_satellite_context
 
 DATA_DIR = os.getenv("DATA_DIR", "./data")
@@ -99,16 +99,22 @@ def load_photos_from_directory(photo_dir: str):
             else:
                 quality_status = "no_gps"
 
+            first_ws = db.query(Watershed).first()
+            target_ws_id = watershed_id or (first_ws.id if first_ws else None)
+            gps_src = "EXIF GPS" if not is_manual else "Manual Coordinates"
+
             db_img = ImageObservation(
                 id=img_id,
                 object_uri=f"uploads/{dest_name}",
+                original_filename=fname,
                 thumbnail_uri=f"thumbnails/{img_id}_thumb.jpg",
                 captured_at=captured_at,
                 latitude=lat,
                 longitude=lon,
                 geom=f"SRID=4326;POINT({lon} {lat})" if (lat and lon) else None,
-                watershed_id=watershed_id,
-                quality_status=quality_status,
+                watershed_id=target_ws_id,
+                gps_source=gps_src,
+                quality_status=quality_status if watershed_id else ("good" if target_ws_id else quality_status),
                 camera_model=camera or "Field Smartphone GPS Camera",
                 altitude=alt or 680.0,
                 is_manual_location=is_manual,
@@ -117,7 +123,7 @@ def load_photos_from_directory(photo_dir: str):
             db.add(db_img)
 
             # Also create corresponding Intervention observation
-            if watershed_id:
+            if target_ws_id:
                 itv = Intervention(
                     name="Masonry Check Dam 01",
                     type="check_dam",
@@ -125,19 +131,25 @@ def load_photos_from_directory(photo_dir: str):
                     latitude=lat,
                     longitude=lon,
                     geom=f"SRID=4326;POINT({lon} {lat})",
-                    watershed_id=watershed_id,
+                    watershed_id=target_ws_id,
                     observed_at=captured_at,
-                    source="Field Geocoded Photo",
+                    source="Geo-Tagged Field Photo",
                     description="Masonry check dam constructed on primary drainage stream line.",
                     cost_estimate=250000.0,
                     beneficiaries=140,
-                    image_id=img_id
+                    image_id=img_id,
+                    photo_path=f"uploads/{dest_name}",
+                    photo_filename=fname,
+                    exif_latitude=lat,
+                    exif_longitude=lon,
+                    exif_timestamp=captured_at,
+                    gps_source=gps_src
                 )
                 db.add(itv)
 
             db.commit()
             loaded_count += 1
-            print(f"Loaded photo '{fname}' -> ID: {img_id}, Status: {quality_status}, Watershed: {watershed_id}")
+            print(f"Loaded photo '{fname}' -> ID: {img_id}, Status: {quality_status}, Watershed: {target_ws_id}")
 
         print(f"Batch photo loading complete. Total photos loaded: {loaded_count}")
     finally:

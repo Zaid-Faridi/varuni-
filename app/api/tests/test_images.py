@@ -11,22 +11,17 @@ def create_jpeg_with_exif(lat=None, lon=None) -> bytes:
     exif_dict = img.getexif()
 
     if lat is not None and lon is not None:
-        # Convert decimal degrees to DMS rational format
         def deg_to_dms(deg):
             d = int(abs(deg))
-            min_float = (abs(deg) - d) * 60.0
-            m = int(min_float)
-            s = int(round((min_float - m) * 60.0 * 100.0))
-            return ((d, 1), (m, 1), (s, 100))
+            m = int((abs(deg) - d) * 60.0)
+            s = float(round(((abs(deg) - d) * 60.0 - m) * 60.0, 2))
+            return (float(d), float(m), s)
 
-        gps_ifd = {
-            1: 'N' if lat >= 0 else 'S',
-            2: deg_to_dms(lat),
-            3: 'E' if lon >= 0 else 'W',
-            4: deg_to_dms(lon),
-        }
-        # EXIF GPS IFD tag ID is 34853 (0x8825)
-        exif_dict[34853] = gps_ifd
+        gps_ifd = exif_dict.get_ifd(0x8825)
+        gps_ifd[1] = 'N' if lat >= 0 else 'S'
+        gps_ifd[2] = deg_to_dms(lat)
+        gps_ifd[3] = 'E' if lon >= 0 else 'W'
+        gps_ifd[4] = deg_to_dms(lon)
 
     buf = io.BytesIO()
     img.save(buf, format="JPEG", exif=exif_dict)
@@ -75,3 +70,62 @@ def test_upload_image_outside_monitored_area(client):
     assert res_loc.status_code == 200
     assert res_loc.json()["quality_status"] == "outside_monitored_area"
     assert res_loc.json()["watershed_id"] is None
+
+
+def test_photo_to_intervention_linking(client):
+    """Verifies that uploading a photo and registering an intervention links and persists all metadata."""
+    img_bytes = create_jpeg_with_exif(lat=18.45, lon=73.75)
+    files = {"file": ("field_check_dam.jpg", img_bytes, "image/jpeg")}
+    res_img = client.post("/api/v1/images/", files=files)
+    assert res_img.status_code == 200
+    img_data = res_img.json()
+    assert img_data["original_filename"] == "field_check_dam.jpg"
+    assert img_data["gps_source"] == "EXIF GPS"
+    assert img_data["latitude"] == 18.45
+    assert img_data["longitude"] == 73.75
+    img_id = img_data["id"]
+    object_uri = img_data["object_uri"]
+
+    # Register intervention linked to this photo
+    payload = {
+        "name": "Linked Check Dam 01",
+        "type": "check_dam",
+        "status": "observed",
+        "image_id": img_id,
+        "photo_path": object_uri,
+        "photo_filename": "field_check_dam.jpg",
+        "exif_latitude": 18.45,
+        "exif_longitude": 73.75,
+        "gps_source": "EXIF GPS",
+        "latitude": 18.45,
+        "longitude": 73.75,
+        "description": "Masonry check dam with EXIF ground photo."
+    }
+    res_itv = client.post("/api/v1/interventions/", json=payload)
+    assert res_itv.status_code == 200
+    itv_data = res_itv.json()
+    assert itv_data["image_id"] == img_id
+    assert itv_data["photo_path"] == object_uri
+    assert itv_data["photo_filename"] == "field_check_dam.jpg"
+    assert itv_data["exif_latitude"] == 18.45
+    assert itv_data["exif_longitude"] == 73.75
+    assert itv_data["gps_source"] == "EXIF GPS"
+
+    # Detail query
+    res_detail = client.get(f"/api/v1/interventions/{itv_data['id']}")
+    assert res_detail.status_code == 200
+    detail = res_detail.json()
+    assert detail["image_id"] == img_id
+    assert detail["photo_path"] == object_uri
+    assert detail["photo_filename"] == "field_check_dam.jpg"
+    assert detail["gps_source"] == "EXIF GPS"
+
+    # File serving query
+    res_file = client.get(f"/api/v1/images/{img_id}/file")
+    assert res_file.status_code == 200
+    assert len(res_file.content) > 0
+
+    # Static data route serving
+    res_static = client.get(f"/data/{object_uri}")
+    assert res_static.status_code == 200
+    assert len(res_static.content) > 0

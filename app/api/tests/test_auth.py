@@ -8,8 +8,12 @@ from services.auth import (
     decode_token,
     check_login_rate_limit,
     reset_login_rate_limit,
-    MAX_LOGIN_ATTEMPTS
+    MAX_LOGIN_ATTEMPTS,
+    get_jwt_secret_key,
+    validate_jwt_secret,
+    seed_admin_user,
 )
+import os
 from models import User, AuditEvent
 import uuid
 
@@ -100,3 +104,94 @@ def test_auth_login_endpoints_and_roles(client, db_session):
     # 4. Admin audit logs endpoint with gis_analyst role -> 403 Forbidden
     audit_res = client.get("/api/v1/auth/audit-logs", headers={"Authorization": f"Bearer {token}"})
     assert audit_res.status_code == 403
+
+
+def test_jwt_secret_key_validation(monkeypatch):
+    """Verifies that missing or < 32 char JWT secret keys raise clear errors."""
+    # Missing / empty
+    monkeypatch.setenv("JWT_SECRET_KEY", "")
+    with pytest.raises(RuntimeError) as exc_missing:
+        validate_jwt_secret()
+    assert "JWT_SECRET_KEY" in str(exc_missing.value)
+    assert "32 characters" in str(exc_missing.value)
+
+    # Shorter than 32 characters
+    monkeypatch.setenv("JWT_SECRET_KEY", "short_secret_key_123")
+    with pytest.raises(RuntimeError) as exc_short:
+        validate_jwt_secret()
+    assert "32 characters" in str(exc_short.value)
+
+    # Valid secret key (>= 32 chars)
+    valid_key = "a_very_secure_and_sufficiently_long_jwt_secret_key_2026"
+    monkeypatch.setenv("JWT_SECRET_KEY", valid_key)
+    assert validate_jwt_secret() == valid_key
+
+
+def test_seed_admin_user_demo_mode_off(monkeypatch, db_session):
+    """When DEMO_MODE=0, only admin is created and ADMIN_PASSWORD is required (min 12 chars)."""
+    monkeypatch.setenv("DEMO_MODE", "0")
+    
+    # Missing ADMIN_PASSWORD -> raises RuntimeError
+    monkeypatch.setenv("ADMIN_PASSWORD", "")
+    with pytest.raises(RuntimeError) as exc_missing:
+        seed_admin_user(db_session)
+    assert "ADMIN_PASSWORD" in str(exc_missing.value)
+    assert "12 characters" in str(exc_missing.value)
+
+    # Short ADMIN_PASSWORD (< 12 chars) -> raises RuntimeError
+    monkeypatch.setenv("ADMIN_PASSWORD", "shortpass")
+    with pytest.raises(RuntimeError) as exc_short:
+        seed_admin_user(db_session)
+    assert "12 characters" in str(exc_short.value)
+
+    # Valid ADMIN_PASSWORD -> creates ONLY admin
+    valid_admin_pass = "ValidAdminSecurePass2026!"
+    admin_email = f"admin_{uuid.uuid4().hex[:6]}@watershed.gov.in"
+    admin_user = f"admin_{uuid.uuid4().hex[:6]}"
+    monkeypatch.setenv("ADMIN_EMAIL", admin_email)
+    monkeypatch.setenv("ADMIN_USERNAME", admin_user)
+    monkeypatch.setenv("ADMIN_PASSWORD", valid_admin_pass)
+
+    seeded_admin = seed_admin_user(db_session)
+    assert seeded_admin is not None
+    assert seeded_admin.email == admin_email
+    assert verify_password(valid_admin_pass, seeded_admin.hashed_password) is True
+
+    # Ensure analyst/officer/reviewer were NOT created
+    assert db_session.query(User).filter(User.username == "analyst").first() is None
+    assert db_session.query(User).filter(User.username == "officer").first() is None
+    assert db_session.query(User).filter(User.username == "reviewer").first() is None
+
+
+def test_seed_admin_user_demo_mode_on(monkeypatch, db_session):
+    """When DEMO_MODE=1, extra role accounts are created with specified or generated passwords."""
+    monkeypatch.setenv("DEMO_MODE", "1")
+    monkeypatch.setenv("ADMIN_PASSWORD", "AdminSecureDemoPass2026!")
+    monkeypatch.setenv("DEMO_ANALYST_PASSWORD", "CustomAnalystPass2026!")
+    monkeypatch.delenv("DEMO_OFFICER_PASSWORD", raising=False)
+    monkeypatch.delenv("DEMO_REVIEWER_PASSWORD", raising=False)
+
+    admin_email = f"admin_{uuid.uuid4().hex[:6]}@watershed.gov.in"
+    admin_user = f"admin_{uuid.uuid4().hex[:6]}"
+    monkeypatch.setenv("ADMIN_EMAIL", admin_email)
+    monkeypatch.setenv("ADMIN_USERNAME", admin_user)
+
+    seeded_admin = seed_admin_user(db_session)
+    assert seeded_admin is not None
+
+    # Analyst account created with specified env password
+    analyst = db_session.query(User).filter(User.username == "analyst").first()
+    assert analyst is not None
+    assert analyst.role == "gis_analyst"
+    assert verify_password("CustomAnalystPass2026!", analyst.hashed_password) is True
+
+    # Officer and Reviewer accounts created with generated random passwords
+    officer = db_session.query(User).filter(User.username == "officer").first()
+    assert officer is not None
+    assert officer.role == "field_officer"
+    assert officer.hashed_password is not None
+
+    reviewer = db_session.query(User).filter(User.username == "reviewer").first()
+    assert reviewer is not None
+    assert reviewer.role == "reviewer"
+    assert reviewer.hashed_password is not None

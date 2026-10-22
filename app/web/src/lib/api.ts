@@ -69,10 +69,28 @@ export const fetchInterventions = (filters?: { watershed_id?: string; type?: str
   return apiFetch<InterventionInfo[]>(`/api/v1/interventions/${q}`);
 };
 export const fetchInterventionDetail = (id: string) => apiFetch<InterventionInfo>(`/api/v1/interventions/${id}`);
-export const createIntervention = (payload: InterventionCreatePayload) =>
-  apiFetch<InterventionInfo>("/api/v1/interventions/", { method: "POST", body: JSON.stringify(payload) });
-export const reviewIntervention = (id: string, review: InterventionReviewPayload) =>
-  apiFetch<InterventionInfo>(`/api/v1/interventions/${id}/review`, { method: "PATCH", body: JSON.stringify(review) });
+export const createIntervention = (payload: InterventionCreatePayload, idempotencyKey?: string) => {
+  const headers: Record<string, string> = {};
+  const effectiveKey = idempotencyKey || payload.idempotency_key;
+  if (effectiveKey) {
+    headers["Idempotency-Key"] = effectiveKey;
+  }
+  return apiFetch<InterventionInfo>("/api/v1/interventions/", {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ ...payload, idempotency_key: effectiveKey }),
+  });
+};
+export const reviewIntervention = (
+  id: string,
+  review: { decision: "confirm" | "needs_visit" | "dismiss"; notes?: string; expected_status: string }
+) =>
+  apiFetch<InterventionInfo>(`/api/v1/interventions/${id}/review`, {
+    method: "POST",
+    body: JSON.stringify(review),
+  });
+export const fetchInterventionReviews = (id: string) =>
+  apiFetch<ReviewEvent[]>(`/api/v1/interventions/${id}/reviews`);
 export const runInterventionChangeDetection = (id: string, params?: { metric?: string; treated_radius_m?: number }) => {
   const q = new URLSearchParams();
   if (params?.metric) q.set("metric", params.metric);
@@ -108,8 +126,18 @@ export const reviewImageLabel = (id: string, payload: { assigned_label: string; 
   apiFetch<ImageInfo>(`/api/v1/images/${id}/label`, { method: "POST", body: JSON.stringify(payload) });
 export const setManualImageLocation = (id: string, lat: number, lon: number) =>
   apiFetch<ImageInfo>(`/api/v1/images/${id}/manual-location?latitude=${lat}&longitude=${lon}`, { method: "PUT" });
-export const getImageUrl = (objectUri: string) => `${API_BASE}/data/${objectUri}`;
-export const getThumbnailUrl = (thumbUri?: string) => thumbUri ? `${API_BASE}/data/${thumbUri}` : "/placeholder.jpg";
+export const getImageUrl = (objectUri?: string | null) => {
+  if (!objectUri) return "/placeholder.jpg";
+  if (objectUri.startsWith("http://") || objectUri.startsWith("https://")) return objectUri;
+  if (objectUri.startsWith("/data/")) return `${API_BASE}${objectUri}`;
+  if (objectUri.startsWith("data/")) return `${API_BASE}/${objectUri}`;
+  if (objectUri.startsWith("/")) return `${API_BASE}${objectUri}`;
+  return `${API_BASE}/data/${objectUri}`;
+};
+export const getThumbnailUrl = (thumbUri?: string | null) => {
+  if (!thumbUri) return "/placeholder.jpg";
+  return getImageUrl(thumbUri);
+};
 
 // ─── Satellite & Rasters ─────────────────────────────────
 export const fetchSatelliteScenes = () => apiFetch<SatelliteScene[]>("/api/v1/satellite/scenes");
@@ -174,6 +202,10 @@ export interface DashboardStats {
   avg_ndwi: number | null;
   total_water_area_sqkm: number | null;
   quality_alerts: number;
+  verified_interventions?: number;
+  needs_visit_interventions?: number;
+  dismissed_interventions?: number;
+  observed_interventions?: number;
 }
 
 export interface WatershedSummary {
@@ -260,11 +292,27 @@ export interface PointHydrology {
   cell_area_sqkm: number;
 }
 
+export interface ReviewEvent {
+  id: string;
+  intervention_id: string;
+  from_status: string;
+  to_status: string;
+  decision: string;
+  notes?: string | null;
+  reviewer_id: string;
+  reviewer_name?: string | null;
+  created_at: string;
+}
+
 export interface InterventionInfo {
   id: string;
   name?: string | null;
   type: string;
   status: string; // proposed, observed, verified, needs_review, archived
+  review_status: "OBSERVED" | "VERIFIED" | "NEEDS_FIELD_VISIT" | "DISMISSED" | string;
+  current_reviewer_id?: string | null;
+  current_notes?: string | null;
+  idempotency_key?: string | null;
   latitude?: number | null;
   longitude?: number | null;
   watershed_id?: string | null;
@@ -281,26 +329,41 @@ export interface InterventionInfo {
   reviewer_id?: string | null;
   reviewed_at?: string | null;
   image_id?: string | null;
+  photo_path?: string | null;
+  photo_filename?: string | null;
+  exif_latitude?: number | null;
+  exif_longitude?: number | null;
+  exif_timestamp?: string | null;
+  gps_source?: string | null;
+  satellite_context?: ImageSatelliteContext | null;
   created_at?: string | null;
   updated_at?: string | null;
 }
 
 export interface InterventionCreatePayload {
-  name?: string;
+  name?: string | null;
   type: string;
-  status?: string;
+  status?: string | null;
   latitude: number;
   longitude: number;
-  watershed_id?: string;
-  description?: string;
-  cost_estimate?: number;
-  beneficiaries?: number;
-  source?: string;
+  watershed_id?: string | null;
+  description?: string | null;
+  cost_estimate?: number | null;
+  beneficiaries?: number | null;
+  source?: string | null;
+  image_id?: string | null;
+  photo_path?: string | null;
+  photo_filename?: string | null;
+  exif_latitude?: number | null;
+  exif_longitude?: number | null;
+  exif_timestamp?: string | null;
+  gps_source?: string | null;
+  idempotency_key?: string | null;
 }
 
 export interface InterventionReviewPayload {
-  decision: "confirm" | "dismiss" | "needs_field_visit";
-  reviewer_id: string;
+  decision: "confirm" | "needs_visit" | "dismiss";
+  expected_status: string;
   notes?: string;
 }
 
@@ -338,6 +401,8 @@ export interface SatelliteContextScene {
   window_3x3_mean_ndvi?: number | null;
   window_3x3_mean_ndwi?: number | null;
   is_far_gap: boolean;
+  sensor?: string | null;
+  resolution_m?: number | null;
 }
 
 export interface ImageSatelliteContext {
@@ -350,10 +415,12 @@ export interface ImageSatelliteContext {
 export interface ImageInfo {
   id: string;
   object_uri: string;
+  original_filename?: string | null;
   thumbnail_uri?: string | null;
   captured_at?: string | null;
   latitude?: number | null;
   longitude?: number | null;
+  gps_source?: string | null;
   watershed_id?: string | null;
   watershed_name?: string | null;
   quality_status: string; // good, poor, duplicate, no_gps, outside_monitored_area, pending

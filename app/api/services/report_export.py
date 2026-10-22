@@ -92,6 +92,7 @@ def generate_observations_csv(db: Session, watershed_id: Optional[uuid.UUID] = N
 
     for itv in interventions:
         ws_name = itv.watershed.name if itv.watershed else "Unassigned"
+        rev_status = itv.review_status or itv.status or "OBSERVED"
         writer.writerow([
             "intervention",
             str(itv.id),
@@ -101,7 +102,7 @@ def generate_observations_csv(db: Session, watershed_id: Optional[uuid.UUID] = N
             itv.latitude if itv.latitude is not None else "",
             itv.longitude if itv.longitude is not None else "",
             itv.observed_at.strftime("%Y-%m-%d") if itv.observed_at else "",
-            "verified" if itv.status == "verified" else itv.status,
+            rev_status,
             "",  # quality score n/a for structural intervention
             "",  # blur score n/a
             "",  # model label
@@ -112,7 +113,7 @@ def generate_observations_csv(db: Session, watershed_id: Optional[uuid.UUID] = N
             round(itv.upstream_catchment_area_sqkm, 4) if itv.upstream_catchment_area_sqkm is not None else "",
             round(itv.local_slope_deg, 2) if itv.local_slope_deg is not None else "",
             itv.type,
-            itv.status,
+            rev_status,
             itv.source or "Field Survey",
             gen_time,
             SOFTWARE_VERSION
@@ -175,6 +176,7 @@ def generate_observations_geojson(db: Session, watershed_id: Optional[uuid.UUID]
         if itv.longitude is None or itv.latitude is None:
             continue
         ws_name = itv.watershed.name if itv.watershed else "Unassigned"
+        rev_status = itv.review_status or itv.status or "OBSERVED"
         features.append({
             "type": "Feature",
             "id": str(itv.id),
@@ -187,6 +189,7 @@ def generate_observations_geojson(db: Session, watershed_id: Optional[uuid.UUID]
                 "name": itv.name or itv.type,
                 "type": itv.type,
                 "status": itv.status,
+                "review_status": rev_status,
                 "watershed_id": str(itv.watershed_id) if itv.watershed_id else None,
                 "watershed_name": ws_name,
                 "observed_at": itv.observed_at.strftime("%Y-%m-%d") if itv.observed_at else None,
@@ -442,6 +445,7 @@ def generate_watershed_pdf_report(
             dist_str = f"{itv.nearest_stream_distance_m:.1f} m" if itv.nearest_stream_distance_m is not None else "—"
             area_str = f"{itv.upstream_catchment_area_sqkm:.3f} km²" if itv.upstream_catchment_area_sqkm is not None else "—"
             coord_str = f"{itv.latitude:.4f}, {itv.longitude:.4f}" if itv.latitude and itv.longitude else "—"
+            rev_status = itv.review_status or itv.status or "OBSERVED"
             itv_rows.append([
                 (itv.name or str(itv.id))[:18],
                 itv.type.replace("_", " "),
@@ -449,7 +453,7 @@ def generate_watershed_pdf_report(
                 itv.observed_at.strftime("%Y-%m-%d") if itv.observed_at else "—",
                 dist_str,
                 area_str,
-                itv.status
+                rev_status
             ])
     else:
         itv_rows.append(["No interventions recorded", "—", "—", "—", "—", "—", "—"])

@@ -11,6 +11,7 @@ import {
   Layers,
   FileText,
   ExternalLink,
+  Satellite,
 } from "lucide-react";
 import { InterventionInfo, reviewIntervention } from "@/lib/api";
 
@@ -26,7 +27,7 @@ export default function InterventionDetailModal({
   onUpdate,
 }: InterventionDetailModalProps) {
   const [reviewing, setReviewing] = useState(false);
-  const [selectedDecision, setSelectedDecision] = useState<"confirm" | "dismiss" | "needs_field_visit">("confirm");
+  const [selectedDecision, setSelectedDecision] = useState<"confirm" | "needs_visit" | "dismiss">("confirm");
   const [reviewerNotes, setReviewerNotes] = useState("");
   const [statusMsg, setStatusMsg] = useState("");
 
@@ -37,8 +38,8 @@ export default function InterventionDetailModal({
     try {
       await reviewIntervention(intervention.id, {
         decision: selectedDecision,
-        reviewer_id: "field_officer",
-        notes: reviewerNotes,
+        notes: reviewerNotes.trim() || undefined,
+        expected_status: intervention.review_status || "OBSERVED",
       });
       setStatusMsg("Review submitted successfully.");
       onUpdate?.();
@@ -148,6 +149,73 @@ export default function InterventionDetailModal({
             </div>
           </div>
 
+          {/* Real Landsat 8/9 Level-2 Satellite Observation Context (30m GSD) */}
+          <div className="p-3 bg-emerald-50/70 border border-emerald-200 rounded space-y-2">
+            <span className="font-bold text-emerald-950 uppercase text-[10px] block tracking-wider flex items-center gap-1.5">
+              <Satellite className="w-3.5 h-3.5 text-emerald-700" />
+              <span>Satellite Observation Context (Landsat 8/9 Level-2 30m)</span>
+            </span>
+            {intervention.satellite_context?.nearest_before || intervention.satellite_context?.nearest_after ? (
+              <div className="grid grid-cols-2 gap-2 text-xs">
+                {/* Nearest Before */}
+                <div className="bg-white p-2 rounded border border-emerald-100">
+                  <span className="text-[9px] text-slate-500 font-bold uppercase block">Nearest Scene Before</span>
+                  {intervention.satellite_context?.nearest_before ? (
+                    <div className="mt-0.5 space-y-0.5 font-mono text-[11px]">
+                      <div className="flex justify-between items-baseline">
+                        <span className="text-slate-500 text-[10px]">NDVI:</span>
+                        <span className="font-bold text-emerald-800">
+                          {intervention.satellite_context.nearest_before.ndvi != null
+                            ? intervention.satellite_context.nearest_before.ndvi.toFixed(3)
+                            : "No valid observation available."}
+                        </span>
+                      </div>
+                      <div className="text-[10px] text-slate-600 truncate" title={intervention.satellite_context.nearest_before.scene_id}>
+                        {intervention.satellite_context.nearest_before.scene_id}
+                      </div>
+                      <div className="text-[9px] text-slate-500 flex justify-between">
+                        <span>{intervention.satellite_context.nearest_before.date}</span>
+                        <span>{intervention.satellite_context.nearest_before.sensor || "OLI-TIRS"} ({intervention.satellite_context.nearest_before.resolution_m || 30}m)</span>
+                      </div>
+                    </div>
+                  ) : (
+                    <span className="text-[11px] text-slate-400 italic">No valid observation available.</span>
+                  )}
+                </div>
+
+                {/* Nearest After */}
+                <div className="bg-white p-2 rounded border border-emerald-100">
+                  <span className="text-[9px] text-slate-500 font-bold uppercase block">Nearest Scene After</span>
+                  {intervention.satellite_context?.nearest_after ? (
+                    <div className="mt-0.5 space-y-0.5 font-mono text-[11px]">
+                      <div className="flex justify-between items-baseline">
+                        <span className="text-slate-500 text-[10px]">NDVI:</span>
+                        <span className="font-bold text-emerald-800">
+                          {intervention.satellite_context.nearest_after.ndvi != null
+                            ? intervention.satellite_context.nearest_after.ndvi.toFixed(3)
+                            : "No valid observation available."}
+                        </span>
+                      </div>
+                      <div className="text-[10px] text-slate-600 truncate" title={intervention.satellite_context.nearest_after.scene_id}>
+                        {intervention.satellite_context.nearest_after.scene_id}
+                      </div>
+                      <div className="text-[9px] text-slate-500 flex justify-between">
+                        <span>{intervention.satellite_context.nearest_after.date}</span>
+                        <span>{intervention.satellite_context.nearest_after.sensor || "OLI-TIRS"} ({intervention.satellite_context.nearest_after.resolution_m || 30}m)</span>
+                      </div>
+                    </div>
+                  ) : (
+                    <span className="text-[11px] text-slate-400 italic">No valid observation available.</span>
+                  )}
+                </div>
+              </div>
+            ) : (
+              <div className="bg-white p-2 rounded border border-emerald-100 text-[11px] text-slate-500 font-mono text-center">
+                {intervention.satellite_context?.message || "No valid observation available."}
+              </div>
+            )}
+          </div>
+
           {/* Description */}
           {intervention.description && (
             <div className="p-3 bg-white border border-slate-200 rounded">
@@ -173,7 +241,7 @@ export default function InterventionDetailModal({
             ) : (
               <div className="space-y-2">
                 <div className="flex gap-2">
-                  {(["confirm", "needs_field_visit", "dismiss"] as const).map((d) => (
+                  {(["confirm", "needs_visit", "dismiss"] as const).map((d) => (
                     <button
                       key={d}
                       type="button"

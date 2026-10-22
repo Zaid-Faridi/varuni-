@@ -162,7 +162,7 @@ export default function LoginPage() {
                     required
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
-                    placeholder="Enter account password (e.g. admin123)"
+                    placeholder="Enter account password"
                     className="w-full text-xs bg-white border border-slate-300 rounded pl-9 pr-9 py-2 text-slate-900 focus:outline-none focus:ring-1 focus:ring-emerald-700 focus:border-emerald-700 font-medium"
                   />
                   <button
@@ -240,7 +240,7 @@ export default function LoginPage() {
 
             <div className="pt-2 text-center">
               <p className="text-[11px] text-slate-500">
-                Credentials: <code className="bg-slate-100 px-1 py-0.5 rounded text-slate-700 font-mono">admin</code> / <code className="bg-slate-100 px-1 py-0.5 rounded text-slate-700 font-mono">admin123</code>
+                Sign in with credentials set in your environment (<code className="bg-slate-100 px-1 py-0.5 rounded text-slate-700 font-mono">ADMIN_PASSWORD</code>) or use 1-click role login.
               </p>
             </div>
           </div>

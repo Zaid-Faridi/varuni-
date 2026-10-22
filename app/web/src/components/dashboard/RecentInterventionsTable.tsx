@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import {
   Table,
   Search,
@@ -20,6 +21,7 @@ interface RecentInterventionsTableProps {
 export default function RecentInterventionsTable({
   onViewIntervention,
 }: RecentInterventionsTableProps) {
+  const router = useRouter();
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [records, setRecords] = useState<InterventionInfo[]>([]);
@@ -42,38 +44,45 @@ export default function RecentInterventionsTable({
       type.toLowerCase().includes(searchTerm.toLowerCase()) ||
       wsName.toLowerCase().includes(searchTerm.toLowerCase());
 
-    const matchesStatus = statusFilter === "all" || item.status === statusFilter;
+    const itemStatus = (item.review_status || item.status || "OBSERVED").toLowerCase();
+    const matchesStatus =
+      statusFilter === "all" ||
+      itemStatus === statusFilter ||
+      (statusFilter === "needs_review" && (itemStatus === "needs_field_visit" || itemStatus === "needs_review"));
     return matchesSearch && matchesStatus;
   });
 
-  const getStatusBadge = (status: string) => {
+  const getStatusBadge = (rawStatus?: string) => {
+    const status = (rawStatus || "OBSERVED").toUpperCase();
     switch (status) {
-      case "verified":
+      case "VERIFIED":
         return (
           <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-bold bg-emerald-100 text-emerald-900 border border-emerald-300">
             <CheckCircle2 className="w-3 h-3 text-emerald-700" />
             Verified
           </span>
         );
-      case "needs_review":
+      case "NEEDS_FIELD_VISIT":
+      case "NEEDS_REVIEW":
         return (
-          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-bold bg-rose-100 text-rose-900 border border-rose-300">
-            <AlertTriangle className="w-3 h-3 text-rose-700" />
-            Needs Review
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-bold bg-amber-100 text-amber-950 border border-amber-300">
+            <HelpCircle className="w-3 h-3 text-amber-700" />
+            Needs Visit
           </span>
         );
-      case "observed":
+      case "DISMISSED":
+        return (
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-bold bg-slate-100 text-slate-700 border border-slate-300">
+            <AlertTriangle className="w-3 h-3 text-slate-500" />
+            Dismissed
+          </span>
+        );
+      case "OBSERVED":
+      default:
         return (
           <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-bold bg-sky-100 text-sky-900 border border-sky-300">
             <Clock className="w-3 h-3 text-sky-700" />
             Observed
-          </span>
-        );
-      default:
-        return (
-          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-bold bg-slate-100 text-slate-800 border border-slate-300">
-            <Clock className="w-3 h-3 text-slate-500" />
-            Proposed
           </span>
         );
     }
@@ -187,15 +196,21 @@ export default function RecentInterventionsTable({
                     )}
                   </td>
                   <td className="py-2 px-3 whitespace-nowrap">
-                    {getStatusBadge(item.status)}
+                    {getStatusBadge(item.review_status || item.status)}
                   </td>
                   <td className="py-2 px-3 whitespace-nowrap text-slate-600 font-mono text-[11px]">
                     {item.observed_at ? item.observed_at.split("T")[0] : "—"}
                   </td>
                   <td className="py-2 px-3 text-right whitespace-nowrap">
                     <button
-                      onClick={() => onViewIntervention?.(item)}
-                      className="px-2 py-1 bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 rounded font-medium text-[11px] inline-flex items-center gap-1 shadow-2xs"
+                      onClick={() => {
+                        if (onViewIntervention) {
+                          onViewIntervention(item);
+                        } else {
+                          router.push(`/interventions/${item.id}`);
+                        }
+                      }}
+                      className="px-2 py-1 bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 rounded font-medium text-[11px] inline-flex items-center gap-1 shadow-2xs cursor-pointer"
                     >
                       <Eye className="w-3 h-3 text-slate-500" />
                       <span>Details</span>

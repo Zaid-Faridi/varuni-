@@ -59,7 +59,10 @@ def get_watershed_report_summary(
         raster_query = raster_query.filter(RasterAsset.watershed_id == watershed_id)
 
     total_interventions = itv_query.count()
-    verified_interventions = itv_query.filter(Intervention.status == "verified").count()
+    verified_interventions = itv_query.filter(Intervention.review_status == "VERIFIED").count()
+    needs_visit_interventions = itv_query.filter(Intervention.review_status == "NEEDS_FIELD_VISIT").count()
+    dismissed_interventions = itv_query.filter(Intervention.review_status == "DISMISSED").count()
+    observed_interventions = itv_query.filter(Intervention.review_status == "OBSERVED").count()
     total_images = img_query.count()
     good_gps_images = img_query.filter(ImageObservation.quality_status == "good").count()
     total_scenes = scene_query.count()
@@ -84,6 +87,9 @@ def get_watershed_report_summary(
             "mean_ndwi": round(avg_ndwi, 4) if avg_ndwi is not None else None,
             "interventions_total": total_interventions,
             "interventions_verified": verified_interventions,
+            "interventions_needs_visit": needs_visit_interventions,
+            "interventions_dismissed": dismissed_interventions,
+            "interventions_observed": observed_interventions,
             "field_photos_total": total_images,
             "field_photos_with_gps": good_gps_images,
             "satellite_scenes_ingested": total_scenes,
