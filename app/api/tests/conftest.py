@@ -13,9 +13,9 @@ os.environ.setdefault("JWT_SECRET_KEY", "pytest_test_session_jwt_secret_key_with
 os.environ.setdefault("ADMIN_PASSWORD", "test_admin_secure_password_min_12_chars")
 os.environ.setdefault("DEMO_MODE", "0")
 
-from database import Base, get_db, engine
+from database import Base, get_db
 from main import app
-import models
+import models  # noqa: F401
 
 # Use test database or current PostGIS database
 TEST_DATABASE_URL = os.getenv(
@@ -44,10 +44,16 @@ def db_session():
     session = TestingSessionLocal()
     # Truncate tables between tests for clean isolation
     try:
-        session.execute(text("TRUNCATE TABLE watershed_time_series, raster_assets, change_events, interventions, images, analysis_results, analysis_jobs, satellite_scenes, watersheds, audit_events, users CASCADE;"))
+        truncate_sql = (
+            "TRUNCATE TABLE watershed_time_series, raster_assets, change_events, "
+            "interventions, images, analysis_results, analysis_jobs, "
+            "satellite_scenes, watersheds, audit_events, users CASCADE;"
+        )
+        session.execute(text(truncate_sql))
         session.commit()
     except Exception:
         session.rollback()
+
     
     yield session
     session.close()

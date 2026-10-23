@@ -4,8 +4,7 @@ import uuid
 import datetime
 from typing import Optional, List, Dict, Any
 import jwt
-from passlib.context import CryptContext
-from fastapi import Depends, HTTPException, status, Request
+from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
 
@@ -219,11 +218,13 @@ def require_role(*allowed_roles: str):
     """
     def role_checker(current_user: User = Depends(get_current_user)) -> User:
         if current_user.role not in allowed_roles:
+            roles_str = ", ".join(allowed_roles)
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail=f"Forbidden: Action requires one of roles: {', '.join(allowed_roles)}. Your role is '{current_user.role}'."
+                detail=f"Forbidden: Action requires one of roles: {roles_str}. Your role is '{current_user.role}'."
             )
         return current_user
+
     return role_checker
 
 

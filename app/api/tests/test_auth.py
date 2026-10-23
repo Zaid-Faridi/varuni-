@@ -1,3 +1,4 @@
+import uuid
 import pytest
 from fastapi import HTTPException
 from services.auth import (
@@ -9,13 +10,11 @@ from services.auth import (
     check_login_rate_limit,
     reset_login_rate_limit,
     MAX_LOGIN_ATTEMPTS,
-    get_jwt_secret_key,
     validate_jwt_secret,
     seed_admin_user,
 )
-import os
-from models import User, AuditEvent
-import uuid
+from models import User
+
 
 
 def test_password_hashing():

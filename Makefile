@@ -19,10 +19,13 @@ test:
 	@cd app/web && npm test
 
 lint:
-	@echo "Linting backend..."
-	@app/api/.venv/bin/flake8 app/api --count --select=E9,F63,F7,F82 --show-source --statistics || true
+	@echo "Linting backend (strict errors & undefined names)..."
+	@app/api/.venv/bin/flake8 app/api --count --select=E9,F63,F7,F82 --show-source --statistics
+	@echo "Linting backend (sensible rules & line length 127)..."
+	@app/api/.venv/bin/flake8 app/api --count --max-line-length=127 --statistics
 	@echo "Linting frontend..."
-	@cd app/web && npm run lint || true
+	@cd app/web && npm run lint
+
 
 dev-backend:
 	PYTHONPATH=app/api app/api/.venv/bin/uvicorn main:app --host 0.0.0.0 --port 8000 --reload
