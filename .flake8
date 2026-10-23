@@ -1,0 +1,23 @@
+[flake8]
+max-line-length = 127
+max-complexity = 25
+exclude =
+    .git,
+    __pycache__,
+    .venv,
+    app/api/.venv,
+    node_modules,
+    data,
+    scratch
+# Sensible ignores for existing style issues while blocking real code errors:
+# E203: whitespace before ':' (PEP 8 / Black compatibility)
+# W503, W504: line break before/after binary operator
+# E402: module level import not at top of file (sys.path manipulation required in tests/scripts)
+# E712: comparison to True/False (standard idiom for SQLAlchemy binary expressions)
+# E302, E303, E305: blank lines formatting
+# W291, W293, W391: whitespace warnings
+# E501: line length limit exceeded (addressed in general, ignore existing long strings/SQL)
+# F401: unused imports (existing codebase has multiple unused imports)
+# F841: unused local variables in existing handlers
+ignore = E203, W503, W504, E402, E712, E302, E303, E305, W291, W293, W391, E501, F401, F841
+
