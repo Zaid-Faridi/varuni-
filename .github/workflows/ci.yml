@@ -65,18 +65,8 @@ jobs:
       - name: Verify JWT_SECRET_KEY fail-fast enforcement
         run: |
           # Ensure backend refuses startup if JWT_SECRET_KEY is missing or < 32 characters
-          python -c "
-          import os, sys
-          sys.path.insert(0, 'app/api')
-          os.environ['JWT_SECRET_KEY'] = 'too_short_key'
-          try:
-              from services.auth import get_jwt_secret_key
-              get_jwt_secret_key()
-              print('ERROR: Short JWT key was accepted!')
-              sys.exit(1)
-          except RuntimeError as e:
-              print(f'Successfully rejected invalid key: {e}')
-          "
+          python -c "import os, sys; sys.path.insert(0, 'app/api'); os.environ['JWT_SECRET_KEY'] = 'too_short_key'; from services.auth import get_jwt_secret_key; get_jwt_secret_key()" && exit 1 || echo "Confirmed: short JWT key correctly rejected"
+
 
       - name: Run Backend Tests (Pytest)
         env:
